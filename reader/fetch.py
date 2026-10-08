@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from playwright.sync_api import sync_playwright
 
-from reader import outlook, profile as profile_mo
+from reader import outlook, profile as profile_mo, proxy as proxy_mo
 from reader.browser import launch_persistent
 from reader.config import Settings
 from reader.mail_login import (
@@ -71,6 +71,7 @@ def run(
                 user_data_dir=str(profile_dir),
                 channel=settings.browser_channel or None,
                 headless=settings.headless,
+                proxy=proxy_mo.parse(settings.proxy_url),
             )
         except Exception as exc:
             return Result(error=profile_mo.explain_launch_error(exc, profile_dir))

@@ -53,6 +53,47 @@ Gọi API trực tiếp thì đính header `X-Reader-Token`. Không có token đ
 đường, kể cả trang chủ, trả 401. Chạy không token trên `0.0.0.0` vẫn được nhưng
 log sẽ cảnh báo một dòng — chỉ nên thế khi đã có lớp chặn khác (VPN, tường lửa).
 
+Lượt lấy mã **kẹt ở `đang mở trình duyệt`** nghĩa là kẹt ở đúng bước khởi động
+Chromium, và lỗi thật nằm trong log của luồng nền. Chạy riêng bước đó ra để nó
+hiện thẳng:
+
+```bash
+uv run python -m reader --check
+```
+
+Hai thứ hay thiếu nhất trên server: **Google Chrome** (mặc định
+`READER_BROWSER_CHANNEL=chrome` đòi Chrome thật — server thì đặt rỗng để dùng
+Chromium của Playwright) và **thư viện hệ thống** cho Chromium (cài bằng
+`playwright install --with-deps chromium`). `--check` nhận ra cả hai và nói
+thẳng phải làm gì.
+
+Log đi ra stdout/stderr của tiến trình, nên nhớ hứng lại lúc khởi động:
+
+```bash
+nohup uv run python -m reader --host 0.0.0.0 --token chuoi-cua-ban \
+      > reader.log 2>&1 &
+tail -f reader.log                 # systemd thì: journalctl -u <unit> -f
+```
+
+### IP của server là lý do hay gặp nhất khiến lượt nào cũng dừng ở 2FA
+
+Microsoft nhìn IP. Đăng nhập một hộp thư từ IP trung tâm dữ liệu — thứ chưa bao
+giờ đăng nhập hộp thư đó — gần như chắc chắn bị hỏi xác minh: "unusual sign-in
+activity", gửi mã về số điện thoại hay email phụ. Cũng tài khoản ấy, cũng mật
+khẩu ấy, đi qua IP dân cư thì thường vào thẳng. Biểu hiện rất đặc trưng: chạy
+ngon trên máy ở nhà, lên server là **lượt nào cũng** dừng ở `cần bạn đăng nhập`
+với lý do xác thực hai bước.
+
+Cách chữa: cho trình duyệt đi qua proxy dân cư.
+
+```bash
+READER_PROXY=http://user:pass@host:port uv run python -m reader --host 0.0.0.0 --token ...
+uv run python -m reader --check        # in ra "qua proxy ..." để chắc là nó có hiệu lực
+```
+
+Nhận cả `socks5://`, và thiếu scheme thì coi là `http://`. Mật khẩu proxy không
+vào log.
+
 **Trên server không màn hình, agent tự chạy headless** (không có `DISPLAY`), và
 khi đó **gặp 2FA hay CAPTCHA là tắc hẳn**: không có cửa sổ nào cho người xử lý,
 lượt đó sẽ báo `cần bạn đăng nhập` rồi hết giờ. Hộp thư nào còn vướng 2FA thì
@@ -108,6 +149,7 @@ Mọi thứ có mặc định dùng được ngay; đổi bằng biến môi tr�
 | `READER_PROFILES` | `.profiles` | nơi giữ phiên Outlook, mỗi email một thư mục con |
 | `READER_INBOX_URL` | `https://outlook.live.com/mail/0/` | hộp thư cần mở |
 | `READER_BROWSER_CHANNEL` | `chrome` | rỗng thì dùng Chromium của Playwright |
+| `READER_PROXY` | rỗng | `http://user:pass@host:port` — xem phần dưới, trên server gần như bắt buộc |
 | `READER_POLL_SECONDS` | `5` | nhịp đọc lại danh sách mail |
 | `READER_REFRESH_SECONDS` | `120` | nhịp tải lại trang (chỉ là lưới an toàn) |
 | `READER_TIMEOUT_SECONDS` | `180` | hạn cho cả một lượt lấy mã |
@@ -139,6 +181,7 @@ riêng và kênh duy nhất đi ra là bản ghi trạng thái có khoá (`reade
 | `reader/outlook.py` | nhận ra trạng thái trang, quét danh sách mail |
 | `reader/otp_extract.py` | chấm điểm dãy số để chọn đúng mã |
 | `reader/account.py` | tách chuỗi dán vào thành email + mật khẩu |
+| `reader/proxy.py` | đọc chuỗi proxy cho trình duyệt |
 
 ## Test
 

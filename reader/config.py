@@ -57,6 +57,9 @@ class Settings:
     # "chrome" dùng Chrome thật nếu máy có; rỗng thì dùng Chromium của
     # Playwright. Chrome thật bị Microsoft nghi ngờ ít hơn.
     browser_channel: str = "chrome"
+    # Proxy cho trình duyệt, dạng http://user:pass@host:port. Xem reader/proxy.py:
+    # IP trung tâm dữ liệu là lý do hay gặp nhất khiến Microsoft hỏi 2FA.
+    proxy_url: str = ""
     poll_seconds: int = 5          # nhịp đọc lại DOM hộp thư
     refresh_seconds: int = 120     # nhịp tải lại trang, chỉ là lưới an toàn
     timeout_seconds: int = 180     # hạn cho cả một lượt lấy mã
@@ -71,6 +74,7 @@ class Settings:
             token=os.getenv("READER_TOKEN", cls.token).strip(),
             host=os.getenv("READER_HOST", cls.host).strip() or cls.host,
             port=_int("READER_PORT", cls.port),
+            proxy_url=os.getenv("READER_PROXY", cls.proxy_url).strip(),
             browser_channel=os.getenv("READER_BROWSER_CHANNEL", cls.browser_channel),
             poll_seconds=_int("READER_POLL_SECONDS", cls.poll_seconds),
             refresh_seconds=_int("READER_REFRESH_SECONDS", cls.refresh_seconds),

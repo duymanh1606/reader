@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 # Phiên Outlook của từng hộp thư nằm ở đây - không bao giờ commit.
 .profiles/
+
+# Token truy cập và log chạy thật - cả hai đều là thứ của một lần triển khai.
+.token
+*.log

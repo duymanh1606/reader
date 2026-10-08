@@ -286,6 +286,10 @@ class _Login:
         self.pace = pace
         self.typed_email = False
         self.typed_password = False
+        # Hai cờ DÍNH (hai cờ trên bị gỡ sau mỗi nhịp chờ): đã từng gõ địa chỉ
+        # / mật khẩu trong lượt này chưa. Xem `_email_input`.
+        self.email_done = False
+        self.password_done = False
         self.opened_portal = False
         self.switch_clicks = 0
         self.notice_clicks = 0
@@ -360,6 +364,30 @@ class _Login:
             self.page.wait_for_timeout(1000)
         return True
 
+    def _email_input(self):
+        """Ô nhập ĐỊA CHỈ ĐĂNG NHẬP - không phải ô xác minh.
+
+        Sau khi đã gõ mật khẩu, mọi ô email hiện ra đều là ô XÁC MINH ("nhập
+        địa chỉ phụ để nhận mã"), chứ không phải chỗ nhập lại địa chỉ đăng
+        nhập. Gõ vào đấy là đẩy mã sang một hộp thư khác - và tệ hơn: nó BIẾN
+        một màn hình còn đọc được thành một màn hình 2FA thật.
+
+        Chạy thật trên server cho thấy đúng chuyện đó: sau "đã nhập mật khẩu"
+        là một dòng "đã nhập địa chỉ" nữa, rồi mới tới "Outlook đang hỏi xác
+        thực hai bước". `find_blocker` không cứu được, vì ở nhịp ấy chữ xác
+        minh chưa kịp hiện ra.
+
+        Nên: hễ đã gõ mật khẩu thì không gõ địa chỉ nữa; và khi đã gõ địa chỉ
+        một lần rồi thì chỉ nhận đúng ô `loginfmt` của Microsoft, không nhận
+        một ô `type=email` bất kỳ.
+        """
+        if self.password_done:
+            return None
+        o_dang_nhap = _first_visible(self.page, ("input[name='loginfmt']",))
+        if o_dang_nhap is not None:
+            return o_dang_nhap
+        return None if self.email_done else _first_visible(self.page, EMAIL_INPUTS)
+
     def type_and_submit(self) -> bool:
         """Gõ mật khẩu nếu đang hỏi mật khẩu, không thì gõ địa chỉ."""
         if not _trusted(self.page):
@@ -378,10 +406,13 @@ class _Login:
                 return True
             _type(o_mat_khau, self.password, self.pace)
             self.typed_password = True
+            self.password_done = True
             logger.info("hộp thư %s: đã nhập mật khẩu", self.email)
         else:
-            o_dia_chi = _first_visible(self.page, EMAIL_INPUTS)
+            o_dia_chi = self._email_input()
             if o_dia_chi is None:
+                # Không có ô nào được phép gõ: chờ một nhịp để vòng sau
+                # `find_blocker` nói rõ đây là màn hình gì.
                 self.page.wait_for_timeout(1000)
                 return True
             if self.typed_email:
@@ -390,6 +421,7 @@ class _Login:
                 return True
             _type(o_dia_chi, self.email, self.pace)
             self.typed_email = True
+            self.email_done = True
             logger.info("hộp thư %s: đã nhập địa chỉ", self.email)
 
         nut = _first_visible(self.page, SUBMIT_BUTTONS)

@@ -11,15 +11,26 @@ from __future__ import annotations
 
 import logging
 
+from reader import proxy as proxy_mo
+
 logger = logging.getLogger(__name__)
 
 
 def launch_persistent(pw, user_data_dir: str, channel: str | None, headless: bool,
-                      args: list[str] | None = None, **kwargs):
+                      args: list[str] | None = None,
+                      proxy: dict[str, str] | None = None, **kwargs):
+    """`proxy` ở dạng Playwright nhận (xem reader/proxy.py).
+
+    None thì KHÔNG truyền xuống: Chromium nhận `--proxy-server=` rỗng là coi
+    như có proxy rỗng và mọi trang đều trắng.
+    """
     chung = dict(user_data_dir=user_data_dir, headless=headless,
                  args=args or [], **kwargs)
     if channel:
         chung["channel"] = channel
+    if proxy:
+        chung["proxy"] = proxy
+        logger.info("trình duyệt %s", proxy_mo.describe(proxy))
     try:
         return pw.chromium.launch_persistent_context(chromium_sandbox=True, **chung)
     except Exception as exc:

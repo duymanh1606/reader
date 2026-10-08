@@ -13,7 +13,7 @@ nên nó không trả về số đơn hàng hay số điện thoại.
 ```bash
 uv sync
 uv run playwright install chromium      # chỉ lần đầu
-uv run python -m reader                 # rồi mở http://127.0.0.1:8000
+uv run python -m reader                 # rồi mở http://127.0.0.1:5678
 ```
 
 Dán một dòng rồi bấm **Lấy mã**:

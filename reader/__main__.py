@@ -1,4 +1,4 @@
-"""Chạy giao diện: `uv run python -m reader` rồi mở http://127.0.0.1:8000"""
+"""Chạy giao diện: `uv run python -m reader` rồi mở http://127.0.0.1:5678"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from reader.server import create_app
 def main() -> None:
     parser = argparse.ArgumentParser(description="Dán email Outlook, nhận mã OTP.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=int, default=5678)
     parser.add_argument("--headless", action="store_true",
                         help="không hiện cửa sổ trình duyệt (gặp 2FA thì bạn "
                              "không còn chỗ nào để xử lý)")

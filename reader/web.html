@@ -151,11 +151,35 @@ function render(job) {
 }
 
 async function poll() {
-  const res = await fetch(`/api/otp/${jobId}`);
-  if (!res.ok) { stopPolling(); return; }
+  let res;
+  try {
+    res = await fetch(`/api/otp/${jobId}`);
+  } catch (e) {
+    // Mất mạng, hoặc server vừa tắt. Nói ra rồi thôi, đừng hỏi mãi.
+    fail("không gọi được server — kiểm tra lại kết nối rồi bấm Lấy mã lần nữa");
+    return;
+  }
+  if (res.status === 404) {
+    // Lượt chỉ sống trong bộ nhớ server: khởi động lại hoặc quá 30 phút là
+    // mất. Im lặng ở đây là người dùng ngồi nhìn một trang đứng yên.
+    fail("lượt này không còn trên server (server đã khởi động lại, hoặc lượt "
+         + "đã quá cũ) — bấm Lấy mã để chạy lại");
+    return;
+  }
+  if (!res.ok) { fail(`server trả lỗi ${res.status}`); return; }
   const job = await res.json();
   render(job);
   if (job.done) stopPolling();
+}
+
+function fail(loi) {
+  stopPolling();
+  show($("panel"), true);
+  $("status").textContent = "không lấy được";
+  $("detail").textContent = loi;
+  $("detail").classList.add("err");
+  show($("detail"), true);
+  $("dot").className = "dot bad";
 }
 
 function stopPolling() {

@@ -103,7 +103,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/", dependencies=need_token)
     def trang_chu(request: Request) -> FileResponse:
-        res = FileResponse(WEB_PAGE)
+        # no-store: cập nhật server xong mà trình duyệt vẫn chạy trang cũ
+        # trong cache là một kiểu lỗi rất khó lần ra.
+        res = FileResponse(WEB_PAGE, headers={"Cache-Control": "no-store"})
         if settings.token and request.query_params.get("token"):
             # Mở trang bằng `?token=...` một lần, rồi cookie lo phần còn lại:
             # trang tự gọi API mà không phải đính token vào từng request, và

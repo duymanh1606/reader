@@ -27,6 +27,38 @@ token, client id…) bị bỏ qua. Dán mỗi email mà không có mật khẩu
 mở cửa sổ Outlook và chờ bạn đăng nhập một lần — phiên nằm lại trong profile nên
 "một lần" là một lần thật.
 
+## Chạy trên server, mở từ máy khác
+
+```bash
+uv sync
+uv run playwright install --with-deps chromium     # server trắng thì cần cả --with-deps
+uv run python -m reader --host 0.0.0.0 --token chuoi-cua-ban
+```
+
+Token là chuỗi **bạn tự đặt**, không có sẵn ở đâu cả. Đặt bằng `--token` như
+trên, hoặc bằng `READER_TOKEN=...` nếu không muốn nó hiện trong `ps` (máy nhiều
+người dùng). Dù đặt cách nào, dòng đầu tiên server in ra có sẵn cả địa chỉ lẫn
+token, chỉ việc copy:
+
+```
+Mở http://0.0.0.0:5678/?token=chuoi-cua-ban
+```
+
+`--host 0.0.0.0` để máy khác gọi được (mặc định chỉ nghe `127.0.0.1`), và nhớ
+mở cổng 5678 ở tường lửa / security group.
+
+Trang này nhận **mật khẩu hộp thư** và trả về **mã OTP**, nên mở ra mạng thì
+phải khoá: đặt token, rồi mở `http://<ip>:5678/?token=<token>` **một lần** — token được cất vào cookie, những lần sau mở `http://<ip>:5678/` là đủ.
+Gọi API trực tiếp thì đính header `X-Reader-Token`. Không có token đúng thì mọi
+đường, kể cả trang chủ, trả 401. Chạy không token trên `0.0.0.0` vẫn được nhưng
+log sẽ cảnh báo một dòng — chỉ nên thế khi đã có lớp chặn khác (VPN, tường lửa).
+
+**Trên server không màn hình, agent tự chạy headless** (không có `DISPLAY`), và
+khi đó **gặp 2FA hay CAPTCHA là tắc hẳn**: không có cửa sổ nào cho người xử lý,
+lượt đó sẽ báo `cần bạn đăng nhập` rồi hết giờ. Hộp thư nào còn vướng 2FA thì
+nên đăng nhập một lần trên máy có màn hình, rồi copy thư mục profile tương ứng
+trong `.profiles/` lên server.
+
 ## Những gì nó không tự làm
 
 Những màn hình **chỉ để thông báo** trên đường vào hộp thư ("We're updating our
@@ -69,7 +101,10 @@ Mọi thứ có mặc định dùng được ngay; đổi bằng biến môi tr�
 
 | Biến | Mặc định | Nghĩa |
 |---|---|---|
-| `READER_HEADLESS` | `false` | `true` thì không hiện cửa sổ — nhưng gặp 2FA bạn không còn chỗ nào để xử lý |
+| `READER_TOKEN` | rỗng | khoá truy cập; rỗng là ai mở được trang cũng dùng được |
+| `READER_HOST` | `127.0.0.1` | `0.0.0.0` để máy khác gọi được |
+| `READER_PORT` | `5678` | cổng của giao diện |
+| `READER_HEADLESS` | theo máy | mặc định `true` khi máy không có màn hình; `true` thì gặp 2FA bạn không còn chỗ nào để xử lý |
 | `READER_PROFILES` | `.profiles` | nơi giữ phiên Outlook, mỗi email một thư mục con |
 | `READER_INBOX_URL` | `https://outlook.live.com/mail/0/` | hộp thư cần mở |
 | `READER_BROWSER_CHANNEL` | `chrome` | rỗng thì dùng Chromium của Playwright |
@@ -85,6 +120,9 @@ Mọi thứ có mặc định dùng được ngay; đổi bằng biến môi tr�
 | `GET /api/otp/{id}` | trạng thái: `status`, `detail`, `code`, `error`, `done` |
 | `POST /api/otp/{id}/stop` | dừng lượt đang chạy |
 | `GET /api/jobs` | các lượt gần đây (không chứa mật khẩu) |
+
+Đặt `READER_TOKEN` thì mọi đường trong bảng đều cần token, qua header
+`X-Reader-Token`, cookie `reader_token`, hoặc `?token=` trên URL.
 
 Giao diện hỏi `GET /api/otp/{id}` mỗi giây, vì một lượt có thể mất tới vài phút:
 Playwright bản sync phải nằm trọn trong một luồng, nên mỗi lượt là một luồng

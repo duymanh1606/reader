@@ -127,3 +127,55 @@ def test_khong_thay_ma_thi_noi_ro_la_het_gio(settings, monkeypatch):
         job = _wait(client, job_id)
         assert job["code"] is None
         assert "không thấy mã nào" in job["error"]
+
+
+# -- khoá truy cập ---------------------------------------------------------
+TOKEN = "chuoi-dai-ngau-nhien"
+
+
+@pytest.fixture
+def khoa(settings, monkeypatch):
+    """Client của một server CÓ đặt token."""
+    import dataclasses
+
+    monkeypatch.setattr(
+        "reader.jobs.run",
+        lambda *a, **k: Result(hit=Hit("483921", "ngữ cảnh trước", "dòng xem trước", "")),
+    )
+    with TestClient(create_app(dataclasses.replace(settings, token=TOKEN))) as client:
+        yield client
+
+
+@pytest.mark.parametrize("duong,cach", [
+    ("/", "get"),
+    ("/api/jobs", "get"),
+    ("/api/otp/bat-ky", "get"),
+    ("/api/otp", "post"),
+    ("/api/otp/bat-ky/stop", "post"),
+])
+def test_khong_token_thi_khong_duong_nao_di_duoc(khoa, duong, cach):
+    goi = getattr(khoa, cach)
+    res = goi(duong, json={"account": "ten@outlook.com|x"}) if cach == "post" else goi(duong)
+    assert res.status_code == 401
+
+
+def test_token_sai_cung_khong_di_duoc(khoa):
+    res = khoa.get("/api/jobs", headers={"X-Reader-Token": TOKEN + "x"})
+    assert res.status_code == 401
+
+
+def test_token_dung_trong_header_thi_di_duoc(khoa):
+    assert khoa.get("/api/jobs", headers={"X-Reader-Token": TOKEN}).status_code == 200
+
+
+def test_mo_trang_bang_query_roi_cookie_lo_phan_con_lai(khoa):
+    """Dán token một lần trên thanh địa chỉ, những lần gọi sau đi bằng cookie -
+    trang không phải đính token vào từng request."""
+    res = khoa.get(f"/?token={TOKEN}")
+    assert res.status_code == 200
+    assert khoa.cookies.get("reader_token") == TOKEN
+    assert khoa.get("/api/jobs").status_code == 200
+
+
+def test_khong_dat_token_thi_van_mo_duoc_nhu_cu(client):
+    assert client.get("/api/jobs").status_code == 200

@@ -53,6 +53,75 @@ Gọi API trực tiếp thì đính header `X-Reader-Token`. Không có token đ
 đường, kể cả trang chủ, trả 401. Chạy không token trên `0.0.0.0` vẫn được nhưng
 log sẽ cảnh báo một dòng — chỉ nên thế khi đã có lớp chặn khác (VPN, tường lửa).
 
+### Lệnh chạy đầy đủ
+
+Gom hết lại một chỗ. Viết thành một file cho khỏi gõ lại mỗi lần, ví dụ
+`chay.sh` ngay trong thư mục dự án (`.gitignore` đã bỏ qua `*.log`, còn
+`chay.sh` thì tự thêm nếu nó chứa mật khẩu):
+
+```bash
+#!/bin/bash
+cd "$(dirname "$0")"
+
+export READER_TOKEN=mekong          # bỏ dòng này là trang mở cho mọi người
+export READER_BROWSER_CHANNEL=             # để rỗng: dùng Chromium của Playwright
+export READER_PROXY=http://user:pass@host:port    # proxy dân cư, bỏ nếu không có
+
+# Gửi mã về hộp thư của bạn - bỏ cả khối nếu không cần
+export READER_SMTP_HOST=smtp.gmail.com
+export READER_SMTP_USER=toi@gmail.com
+export READER_SMTP_PASSWORD=<mật khẩu ứng dụng 16 ký tự>
+export READER_MAIL_TO=toi@gmail.com
+
+# Bắn mã về hệ thống của bạn - bỏ nếu không cần
+export READER_WEBHOOK=https://cho-cua-ban/hook
+export READER_WEBHOOK_SECRET=chuoi-bi-mat
+
+# "$@": để `./chay.sh --check` hay `./chay.sh --port 8080` truyền được xuống
+exec uv run python -m reader --host 0.0.0.0 "$@"
+```
+
+```bash
+chmod +x chay.sh
+nohup ./chay.sh > reader.log 2>&1 &     # chạy nền, log vào reader.log
+tail -f reader.log                      # dòng đầu có sẵn địa chỉ kèm token
+```
+
+Mấy việc hay phải làm:
+
+```bash
+pkill -f "python -m reader"      # dừng
+./chay.sh --check                # thử mở trình duyệt, in lỗi thật nếu hỏng
+curl -s localhost:5678/api/jobs -H "X-Reader-Token: $READER_TOKEN"   # xem các lượt
+```
+
+**Khởi động lại là mất hết các lượt đang chạy** (chúng chỉ sống trong bộ nhớ),
+kể cả mã đã lấy được. Mã nào cần giữ thì để `webhook` hoặc mail mang đi ngay
+lúc có, đừng dựa vào tab đang mở.
+
+Muốn nó tự chạy lại sau khi reboot thì dựng một unit systemd
+(`/etc/systemd/system/reader.service`, nhớ `chmod 600` vì nó chứa mật khẩu):
+
+```ini
+[Unit]
+Description=reader - lấy mã OTP từ Outlook
+After=network-online.target
+
+[Service]
+WorkingDirectory=/duong/dan/reader
+ExecStart=/duong/dan/reader/chay.sh
+Restart=on-failure
+User=<tên người dùng>
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now reader
+journalctl -u reader -f
+```
+
 Lượt lấy mã **kẹt ở `đang mở trình duyệt`** nghĩa là kẹt ở đúng bước khởi động
 Chromium, và lỗi thật nằm trong log của luồng nền. Chạy riêng bước đó ra để nó
 hiện thẳng:
@@ -104,6 +173,34 @@ uv run python -m reader --check        # in ra "qua proxy ..." để chắc là 
 
 Nhận cả `socks5://`, và thiếu scheme thì coi là `http://`. Mật khẩu proxy không
 vào log.
+
+### Đi ra bằng một IP cố định của riêng bạn (egress-ip-gateway)
+
+Máy có nhiều public IP thì cho reader đi ra bằng **đúng một IP bạn chọn**, tách
+khỏi các service khác trên cùng máy, bằng
+[egress-ip-gateway](https://mekongai.site/duymanh/egress-ip-gateway) — không
+phải sửa code reader, nó chỉ là một proxy HTTP có xác thực:
+
+```bash
+# trên máy chạy egw, cấp phát một workspace cho reader:
+./deploy/provision-client.sh reader       # in ra token, CHỈ HIỆN MỘT LẦN
+
+# trong chay.sh của reader:
+export READER_PROXY=http://reader:<TOKEN>@127.0.0.1:3128
+```
+
+Cổng **3128** (HTTP CONNECT), không phải 1080: Chromium không gửi được
+username/password cho SOCKS5. Quy trình đầy đủ — config, ba lớp kiểm, bảng tra
+lỗi theo 407/403/503 — ở
+[deploy/reader.md](https://mekongai.site/duymanh/egress-ip-gateway/-/blob/main/deploy/reader.md)
+trong repo egw.
+
+**Nó không thay được proxy dân cư.** IP của egw là IP bind trên NIC của máy chủ,
+tức vẫn là IP trung tâm dữ liệu, và egw không chain lên proxy khác được. Mà
+`READER_PROXY` chỉ nhận **một** giá trị, nên dùng egw là **thay cho** proxy dân
+cư chứ không cộng thêm. Hộp thư đang vướng 2FA vì IP datacenter thì egw không
+chữa được — egw cho bạn quyền chọn IP nào và log được lượt nào đi IP nào, không
+cho bạn uy tín IP.
 
 **Trên server không màn hình, agent tự chạy headless** (không có `DISPLAY`), và
 khi đó **gặp 2FA hay CAPTCHA là tắc hẳn**: không có cửa sổ nào cho người xử lý,

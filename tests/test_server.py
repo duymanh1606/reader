@@ -21,7 +21,8 @@ from reader.server import create_app
 def client(settings, monkeypatch):
     goi = []
 
-    def fake_run(email, password, cfg, report, should_stop=None, sign_out_after=False):
+    def fake_run(email, password, cfg, report, should_stop=None,
+                 sign_out_after=False, snap=None):
         goi.append({"email": email, "password": password,
                     "sign_out_after": sign_out_after})
         report("đang đọc hộp thư")
@@ -83,7 +84,8 @@ def test_cung_email_khong_mo_hai_trinh_duyet(settings, monkeypatch):
     khởi động được. Lượt sau phải nhận lại đúng lượt đang chạy."""
     tha = threading.Event()
 
-    def fake_run(email, password, cfg, report, should_stop=None, sign_out_after=False):
+    def fake_run(email, password, cfg, report, should_stop=None,
+                 sign_out_after=False, snap=None):
         report("đang đọc hộp thư")
         tha.wait(5)
         return Result(hit=Hit("483921", "ngữ cảnh trước", "dòng xem trước", ""))
@@ -99,7 +101,8 @@ def test_cung_email_khong_mo_hai_trinh_duyet(settings, monkeypatch):
 
 
 def test_bam_dung_thi_lenh_di_toi_luong_lam_viec(settings, monkeypatch):
-    def fake_run(email, password, cfg, report, should_stop=None, sign_out_after=False):
+    def fake_run(email, password, cfg, report, should_stop=None,
+                 sign_out_after=False, snap=None):
         report("đang đọc hộp thư")
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
@@ -127,6 +130,111 @@ def test_khong_thay_ma_thi_noi_ro_la_het_gio(settings, monkeypatch):
         job = _wait(client, job_id)
         assert job["code"] is None
         assert "không thấy mã nào" in job["error"]
+
+
+# -- một đường, một lần gọi ------------------------------------------------
+def test_mot_lan_goi_la_co_ma(client):
+    """Hệ thống khác gọi sang chỉ muốn đúng cái mã, không muốn hỏi lại mỗi giây."""
+    res = client.post("/api/code", json={"account": "ten@outlook.com|MatKhau123"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["code"] == "483921"
+
+
+def test_bi_chan_boi_2fa_thi_tra_409_kem_ly_do(settings, monkeypatch):
+    """409 chứ không phải 408: "phải có người làm" khác hẳn "hết giờ"."""
+    def fake_run(email, password, cfg, report, should_stop=None,
+                 sign_out_after=False, snap=None):
+        report("cần bạn đăng nhập", "Outlook đang hỏi xác thực hai bước")
+        return Result()
+
+    monkeypatch.setattr("reader.jobs.run", fake_run)
+    with TestClient(create_app(settings)) as client:
+        res = client.post("/api/code", json={"account": "ten@outlook.com|x"})
+        assert res.status_code == 409
+        data = res.json()
+        assert data["ok"] is False
+        assert "xác thực hai bước" in data["blocked"]
+        assert data["status"] == "cần bạn đăng nhập"
+
+
+def test_khong_thay_ma_thi_tra_408(settings, monkeypatch):
+    monkeypatch.setattr("reader.jobs.run", lambda *a, **k: Result())
+    with TestClient(create_app(settings)) as client:
+        res = client.post("/api/code", json={"account": "ten@outlook.com|x"})
+        assert res.status_code == 408
+        assert res.json()["ok"] is False
+
+
+def test_cho_qua_han_thi_tra_408_nhung_luot_van_chay_tiep(settings, monkeypatch):
+    tha = threading.Event()
+
+    def fake_run(email, password, cfg, report, should_stop=None,
+                 sign_out_after=False, snap=None):
+        tha.wait(5)
+        return Result(hit=Hit("483921", "ngữ cảnh trước", "dòng xem trước", ""))
+
+    monkeypatch.setattr("reader.jobs.run", fake_run)
+    with TestClient(create_app(settings)) as client:
+        res = client.post("/api/code",
+                          json={"account": "ten@outlook.com|x", "wait": 0.3})
+        assert res.status_code == 408
+        assert res.json()["done"] is False
+        job_id = res.json()["id"]
+        tha.set()
+        assert _wait(client, job_id)["code"] == "483921"   # vẫn chạy tiếp
+
+
+def test_dan_sai_thi_khong_mo_trinh_duyet(client):
+    res = client.post("/api/code", json={"account": "khong-co-email"})
+    assert res.status_code == 400
+    assert client.goi == []
+
+
+# -- ảnh màn hình ----------------------------------------------------------
+def test_chua_co_anh_thi_404(client):
+    job_id = client.post("/api/otp", json={"account": "ten@outlook.com|x"}).json()["id"]
+    _wait(client, job_id)
+    assert client.get(f"/api/otp/{job_id}/screenshot").status_code == 404
+
+
+def test_lay_duoc_anh_man_hinh_cua_luot(settings, monkeypatch):
+    """Trên server không có cửa sổ nào để nhìn: ảnh này là mắt của người dùng."""
+    anh = b"\xff\xd8\xff-gia-vo-la-jpeg"
+
+    def fake_run(email, password, cfg, report, should_stop=None,
+                 sign_out_after=False, snap=None):
+        report("đang đăng nhập Outlook")
+        snap(anh, "https://login.live.com/login.srf")
+        return Result(error="cần bạn đăng nhập")
+
+    monkeypatch.setattr("reader.jobs.run", fake_run)
+    with TestClient(create_app(settings)) as client:
+        job_id = client.post("/api/otp", json={"account": "ten@outlook.com|x"}).json()["id"]
+        job = _wait(client, job_id)
+        assert job["shot_at"] is not None
+        assert job["page_url"] == "https://login.live.com/login.srf"
+        res = client.get(f"/api/otp/{job_id}/screenshot")
+        assert res.status_code == 200
+        assert res.headers["content-type"] == "image/jpeg"
+        assert res.content == anh
+
+
+def test_anh_khong_di_kem_json_trang_thai(settings, monkeypatch):
+    """Giao diện hỏi trạng thái mỗi giây; nhét vài trăm KB base64 vào đấy là
+    tốn vô ích."""
+    def fake_run(email, password, cfg, report, should_stop=None,
+                 sign_out_after=False, snap=None):
+        snap(b"x" * 5000, "https://outlook.live.com/mail/0/")
+        return Result()
+
+    monkeypatch.setattr("reader.jobs.run", fake_run)
+    with TestClient(create_app(settings)) as client:
+        job_id = client.post("/api/otp", json={"account": "ten@outlook.com|x"}).json()["id"]
+        res = client.get(f"/api/otp/{job_id}")
+        assert len(res.content) < 1000
+        assert "shot" not in res.json()
 
 
 # -- khoá truy cập ---------------------------------------------------------

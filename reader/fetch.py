@@ -45,6 +45,26 @@ def _closed(exc: Exception) -> bool:
     return "closed" in text or "target page" in text or "browser has been closed" in text
 
 
+def snapshot(page, snap) -> None:
+    """Chụp màn hình trang cho giao diện xem, nếu có ai hỏi.
+
+    Trên server không có cửa sổ nào để nhìn, nên không có ảnh thì người dùng
+    chỉ thấy mỗi dòng trạng thái và không biết agent đang đứng ở màn hình gì -
+    mà "cần bạn đăng nhập" có thể là 2FA, CAPTCHA, hay sai mật khẩu.
+
+    JPEG chất lượng 60: đủ đọc chữ trên màn hình, và nhẹ hơn PNG vài lần cho
+    một thứ bị thay mới mỗi nhịp poll. Chụp hỏng thì thôi, không làm đổ lượt.
+    """
+    if snap is None:
+        return
+    try:
+        snap(page.screenshot(type="jpeg", quality=60, timeout=5000), page.url or "")
+    except Exception as exc:
+        if _closed(exc):
+            raise
+        logger.debug("chụp màn hình không xong: %s", exc)
+
+
 def run(
     email: str,
     password: str,
@@ -52,11 +72,13 @@ def run(
     report,
     should_stop=None,
     sign_out_after: bool = False,
+    snap=None,
 ) -> Result:
     """Lấy mã OTP gần nhất trong hộp thư `email`.
 
     `report(status, detail="")` được gọi mỗi khi có gì đáng nói - giao diện đọc
-    đúng chuỗi đó. `should_stop()` trả True thì dừng sớm.
+    đúng chuỗi đó. `snap(anh_jpeg, url)` nhận ảnh màn hình mỗi nhịp.
+    `should_stop()` trả True thì dừng sớm.
     """
     stop = should_stop or (lambda: False)
     profile_dir = profile_mo.profile_for(settings.profiles_dir, email)
@@ -79,7 +101,7 @@ def run(
         try:
             page = context.pages[0] if context.pages else context.new_page()
             page.goto(settings.inbox_url, wait_until="domcontentloaded", timeout=60000)
-            hit = _watch(page, email, password, settings, report, stop)
+            hit = _watch(page, email, password, settings, report, stop, snap)
             if sign_out_after:
                 report("đang đăng xuất")
                 sign_out(page)
@@ -100,7 +122,8 @@ def run(
                 pass
 
 
-def _watch(page, email, password, settings: Settings, report, stop) -> Hit | None:
+def _watch(page, email, password, settings: Settings, report, stop,
+           snap=None) -> Hit | None:
     """Vòng đọc hộp thư cho tới khi thấy mã, hoặc hết hạn.
 
     Thứ tự trong vòng là thứ quyết định đúng/sai, nên viết thẳng ra:
@@ -119,6 +142,7 @@ def _watch(page, email, password, settings: Settings, report, stop) -> Hit | Non
             raise Cancelled
         if page.is_closed():
             raise MailLoginBlocked("cửa sổ trình duyệt đã bị đóng")
+        snapshot(page, snap)
 
         if outlook.needs_login(page):
             if login_failed:
@@ -150,6 +174,7 @@ def _watch(page, email, password, settings: Settings, report, stop) -> Hit | Non
                 login_failed = True
                 logger.warning("hộp thư %s: %s", email, exc)
                 report("cần bạn đăng nhập", str(exc))
+                snapshot(page, snap)      # đúng màn hình đang chặn, chụp ngay
                 continue
             page.goto(settings.inbox_url, wait_until="domcontentloaded", timeout=60000)
             seen.clear()       # hộp thư khác thì những gì đã xem không còn nghĩa

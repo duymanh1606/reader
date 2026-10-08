@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from reader.config import Settings
 from reader.fetch import Result, run
+from reader import mailer as mailer_mo, webhook as webhook_mo
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,28 @@ class Job:
     where: str = ""
     subject: str = ""
     error: str | None = None
+    # Lý do cuối cùng agent phải giao lại cho người (2FA, CAPTCHA, sai mật
+    # khẩu). Giữ riêng vì khi lượt kết thúc, `status` bị ghi đè thành "không
+    # lấy được" - mà "bế tắc vì 2FA" và "hết giờ chẳng thấy mail nào" là hai
+    # chuyện khác hẳn, cả với người đọc lẫn với hệ thống gọi API.
+    blocked: str = ""
+    # URL bắn mã về khi xong. KHÔNG vào `as_dict`: query string của webhook
+    # thường mang sẵn một cái khoá.
+    webhook: str = field(default="", repr=False)
+    # Địa chỉ nhận mail báo mã, của riêng lượt này. Rỗng thì lấy mặc định của
+    # server (`READER_MAIL_TO`).
+    mail_to: str = ""
+    # Ảnh màn hình mới nhất của trình duyệt, và trang nó đang đứng. Trên server
+    # không có cửa sổ nào để nhìn, nên đây là mắt duy nhất của người dùng.
+    shot: bytes | None = field(default=None, repr=False)
+    shot_at: float | None = None
+    page_url: str = ""
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None
     _stop: threading.Event = field(default_factory=threading.Event, repr=False)
+    # Bật khi lượt xong. Để người gọi API một-đường chờ bằng `wait()` thay vì
+    # hỏi lại mỗi 0,2 giây - chờ trên Event thì mã về tới nơi là trả ngay.
+    _done: threading.Event = field(default_factory=threading.Event, repr=False)
 
     @property
     def done(self) -> bool:
@@ -56,7 +76,13 @@ class Job:
             "where": self.where,
             "subject": self.subject,
             "error": self.error,
+            "blocked": self.blocked,
             "done": self.done,
+            # Chỉ thời điểm, không phải ảnh: nhét vài trăm KB base64 vào mỗi
+            # lần hỏi trạng thái (mỗi giây) là tốn vô ích. Giao diện lấy ảnh ở
+            # đường riêng, và dùng mốc này để biết lúc nào cần lấy lại.
+            "shot_at": self.shot_at,
+            "page_url": self.page_url,
             "elapsed": round((self.finished_at or time.time()) - self.started_at),
         }
 
@@ -70,7 +96,8 @@ class Jobs:
         self._jobs: dict[str, Job] = {}
 
     # -- giao diện gọi -----------------------------------------------------
-    def start(self, email: str, password: str, sign_out_after: bool = False) -> Job:
+    def start(self, email: str, password: str, sign_out_after: bool = False,
+              webhook: str = "", mail_to: str = "") -> Job:
         """Dựng một lượt mới. Cùng email đang chạy thì trả lại lượt đang chạy.
 
         Hai lượt cùng email là hai Chromium cùng một thư mục profile - cái thứ
@@ -81,7 +108,9 @@ class Jobs:
             for job in self._jobs.values():
                 if job.email == email and not job.done:
                     return job
-            job = Job(id=uuid.uuid4().hex[:12], email=email)
+            job = Job(id=uuid.uuid4().hex[:12], email=email,
+                      webhook=webhook or self.settings.webhook_url,
+                      mail_to=mail_to or self.settings.mail_to)
             self._jobs[job.id] = job
 
         thread = threading.Thread(
@@ -89,6 +118,18 @@ class Jobs:
             name=f"reader-{job.email}", daemon=True,
         )
         thread.start()
+        return job
+
+    def wait(self, job_id: str, timeout: float) -> Job | None:
+        """Chờ tới khi lượt xong, trả về chính nó. None nếu không có lượt ấy.
+
+        Hết `timeout` mà chưa xong thì vẫn trả lượt đó (chưa `done`) - người
+        gọi tự quyết, và lượt vẫn chạy tiếp ở luồng nền.
+        """
+        job = self.get(job_id)
+        if job is None:
+            return None
+        job._done.wait(timeout)
         return job
 
     def get(self, job_id: str) -> Job | None:
@@ -102,6 +143,11 @@ class Jobs:
         job._stop.set()
         return True
 
+    def screenshot(self, job_id: str) -> bytes | None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            return job.shot if job else None
+
     def listing(self) -> list[dict]:
         with self._lock:
             jobs = sorted(self._jobs.values(), key=lambda j: -j.started_at)
@@ -113,18 +159,54 @@ class Jobs:
             with self._lock:
                 job.status = status
                 job.detail = detail
+                if status == "cần bạn đăng nhập":
+                    job.blocked = detail or status
             logger.info("[%s] %s %s", job.email, status, detail)
+
+        def snap(anh: bytes, url: str) -> None:
+            with self._lock:
+                job.shot = anh
+                job.shot_at = time.time()
+                job.page_url = url
 
         try:
             result = run(job.email, password, self.settings, report,
                          should_stop=job._stop.is_set,
-                         sign_out_after=sign_out_after)
+                         sign_out_after=sign_out_after, snap=snap)
         except Exception as exc:                  # pragma: no cover - lưới cuối
             logger.exception("lượt %s đổ", job.id)
             result = Result(error=f"lỗi: {exc}")
         self._finish(job, result)
 
     def _finish(self, job: Job, result: Result) -> None:
+        self._write_result(job, result)
+        job._done.set()          # sau khi đã ghi xong, không phải trước
+        self._call_webhook(job)
+        self._send_mail(job)
+
+    def _call_webhook(self, job: Job) -> None:
+        """Bắn mã về URL đã khai. Chỉ khi CÓ mã.
+
+        Gọi sau `_done.set()`: người đang chờ ở `POST /api/code` nhận mã ngay,
+        không phải đợi thêm một vòng mạng nữa.
+
+        Gửi hỏng không làm đổi kết quả - mã vẫn nằm trong lượt và vẫn đọc được
+        bằng `GET /api/otp/{id}`.
+        """
+        if not job.webhook or not job.code:
+            return
+        webhook_mo.send(job.webhook, {
+            "ok": True,
+            "code": job.code,
+            "email": job.email,
+            "subject": job.subject,
+            "where": job.where,
+            "why": job.why,
+            "job_id": job.id,
+            "at": job.finished_at,
+        }, self.settings.webhook_secret)
+
+    def _write_result(self, job: Job, result: Result) -> None:
         with self._lock:
             job.finished_at = time.time()
             if result.hit is not None:
@@ -138,6 +220,10 @@ class Jobs:
                 job.status = "không lấy được"
                 job.error = result.error
                 job.detail = result.error
+            elif job.blocked:
+                job.status = "cần bạn đăng nhập"
+                job.error = job.blocked
+                job.detail = job.blocked
             else:
                 job.status = "không lấy được"
                 job.error = (
@@ -145,6 +231,19 @@ class Jobs:
                     "trong hộp thư"
                 )
                 job.detail = job.error
+
+    def _send_mail(self, job: Job) -> None:
+        """Gửi mã về hộp thư của bạn, nếu đã khai SMTP. Chỉ khi CÓ mã.
+
+        Như webhook: gọi sau `_done.set()` để người đang chờ ở `POST /api/code`
+        nhận mã ngay, và gửi hỏng cũng không đổi kết quả.
+        """
+        if not job.code or not job.mail_to:
+            return
+        box = self.settings.mailbox
+        if not box.ready:
+            return
+        mailer_mo.send(box, job.code, job.email, job.subject, to=job.mail_to)
 
     def _sweep(self) -> None:
         """Dọn lượt đã xong từ lâu. Gọi dưới khoá."""

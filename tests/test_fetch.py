@@ -138,6 +138,22 @@ def test_khong_co_mat_khau_thi_nho_nguoi_dang_nhap(browser, settings):
         ctx.close()
 
 
+def test_chup_duoc_man_hinh_that(browser, settings):
+    """Ảnh phải là JPEG thật, chụp từ đúng trang đang đứng."""
+    ctx, page = _start(browser)
+    anh = []
+    try:
+        _watch(page, EMAIL, "", settings, Report(), lambda: False,
+               snap=lambda data, url: anh.append((data, url)))
+        assert anh, "không chụp được kiểu nào"
+        data, url = anh[0]
+        assert data[:3] == b"\xff\xd8\xff"        # dấu đầu file JPEG
+        assert len(data) > 1000
+        assert url.startswith("http")
+    finally:
+        ctx.close()
+
+
 def test_bam_dung_thi_dung_ngay(browser, settings):
     ctx, page = _start(browser)
     try:

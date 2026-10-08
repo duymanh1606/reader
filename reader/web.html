@@ -59,6 +59,15 @@
   .meta { color: var(--muted); font-size: 12.5px; }
   .err { color: var(--bad); }
   footer { color: var(--muted); font-size: 12px; text-align: center; }
+  .shot { margin-top: 14px; }
+  .shot img {
+    width: 100%; border: 1px solid var(--line); border-radius: 8px;
+    display: block; background: var(--bg);
+  }
+  .shot .where {
+    color: var(--muted); font-size: 12px; margin-top: 6px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
 </style>
 </head>
 <body>
@@ -87,6 +96,10 @@
         <div class="detail hide" id="detail"></div>
       </div>
     </div>
+    <div class="shot hide" id="shotbox">
+      <a id="shotlink" target="_blank" rel="noopener"><img id="shot" alt="màn hình trình duyệt trên server"></a>
+      <div class="where" id="where"></div>
+    </div>
     <div class="hide" id="result">
       <div class="code" id="code"></div>
       <div class="meta" id="meta"></div>
@@ -99,7 +112,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-let timer = null, jobId = null;
+let timer = null, jobId = null, lastShot = null;
 
 function show(el, on) { el.classList.toggle("hide", !on); }
 
@@ -118,6 +131,20 @@ function render(job) {
     if (job.where) parts.push(`tìm trong ${job.where} (${job.why})`);
     $("meta").textContent = parts.join(" — ");
   }
+  // Trên server không có cửa sổ nào để nhìn, nên ảnh này là mắt của người
+  // dùng: nó cho thấy agent đang đứng ở màn hình gì, nhất là khi trạng thái
+  // chỉ nói "cần bạn đăng nhập".
+  if (job.shot_at) {
+    show($("shotbox"), true);
+    if (job.shot_at !== lastShot) {
+      lastShot = job.shot_at;
+      const src = `/api/otp/${job.id}/screenshot?t=${job.shot_at}`;
+      $("shot").src = src;
+      $("shotlink").href = src;
+    }
+    $("where").textContent = job.page_url || "";
+  }
+
   const running = !job.done;
   show($("stop"), running);
   $("go").disabled = running;
@@ -142,6 +169,8 @@ $("form").addEventListener("submit", async (e) => {
   e.preventDefault();
   stopPolling();
   show($("result"), false);
+  show($("shotbox"), false);
+  lastShot = null;
   $("go").disabled = true;
   const body = { account: $("account").value, sign_out_after: $("signout").checked };
   const res = await fetch("/api/otp", {

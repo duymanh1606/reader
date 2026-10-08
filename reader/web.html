@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lấy mã OTP từ Outlook</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --line: #e3e6ea; --text: #1a1d21;
+    --muted: #6b7280; --accent: #2563eb; --ok: #15803d; --bad: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181c; --card: #1d2126; --line: #2e343b; --text: #e8eaed;
+      --muted: #9aa3ad; --accent: #60a5fa; --ok: #4ade80; --bad: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px; background: var(--bg); color: var(--text);
+    font: 15px/1.55 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px; margin-bottom: 16px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  input[type=text] {
+    width: 100%; padding: 11px 12px; font: inherit; font-family: ui-monospace, monospace;
+    color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px;
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+  button {
+    font: inherit; padding: 10px 16px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button[disabled] { opacity: .5; cursor: not-allowed; }
+  .check { display: flex; gap: 7px; align-items: center; font-size: 13px; color: var(--muted); }
+  .hide { display: none; }
+  .status { display: flex; gap: 9px; align-items: baseline; }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--accent);
+    flex: none; margin-top: 6px; animation: pulse 1.2s ease-in-out infinite;
+  }
+  .dot.ok { background: var(--ok); animation: none; }
+  .dot.bad { background: var(--bad); animation: none; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .detail { color: var(--muted); font-size: 13px; margin: 6px 0 0 18px; }
+  .code {
+    font-family: ui-monospace, monospace; font-size: 38px; font-weight: 600;
+    letter-spacing: .14em; color: var(--ok); margin: 4px 0 2px;
+  }
+  .meta { color: var(--muted); font-size: 12.5px; }
+  .err { color: var(--bad); }
+  footer { color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lấy mã OTP từ Outlook</h1>
+  <p class="sub">Dán <code>email|mật khẩu</code>. Agent tự đăng nhập hộp thư, đọc mã gần nhất rồi trả về đây.</p>
+
+  <form class="card" id="form">
+    <label for="account">Tài khoản Outlook</label>
+    <input id="account" name="account" type="text" autocomplete="off" spellcheck="false"
+           placeholder="ten@outlook.com|MatKhau123">
+    <div class="row">
+      <button class="primary" id="go" type="submit">Lấy mã</button>
+      <button id="stop" type="button" class="hide">Dừng</button>
+      <span class="check">
+        <input type="checkbox" id="signout"><label for="signout" style="margin:0">đăng xuất sau khi lấy xong</label>
+      </span>
+    </div>
+  </form>
+
+  <section class="card hide" id="panel">
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <div>
+        <div id="status">đang chờ</div>
+        <div class="detail hide" id="detail"></div>
+      </div>
+    </div>
+    <div class="hide" id="result">
+      <div class="code" id="code"></div>
+      <div class="meta" id="meta"></div>
+      <div class="row"><button id="copy" type="button">Sao chép mã</button></div>
+    </div>
+  </section>
+
+  <footer>Mật khẩu chỉ đi vào form đăng nhập của Microsoft, không được lưu lại.</footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let timer = null, jobId = null;
+
+function show(el, on) { el.classList.toggle("hide", !on); }
+
+function render(job) {
+  show($("panel"), true);
+  $("status").textContent = job.status + (job.done ? "" : ` · ${job.elapsed}s`);
+  $("detail").textContent = job.detail || "";
+  show($("detail"), Boolean(job.detail) && !job.code);
+  $("detail").classList.toggle("err", Boolean(job.error));
+  $("dot").className = "dot" + (job.code ? " ok" : job.error ? " bad" : "");
+  if (job.code) {
+    show($("result"), true);
+    $("code").textContent = job.code;
+    const parts = [];
+    if (job.subject) parts.push(job.subject);
+    if (job.where) parts.push(`tìm trong ${job.where} (${job.why})`);
+    $("meta").textContent = parts.join(" — ");
+  }
+  const running = !job.done;
+  show($("stop"), running);
+  $("go").disabled = running;
+}
+
+async function poll() {
+  const res = await fetch(`/api/otp/${jobId}`);
+  if (!res.ok) { stopPolling(); return; }
+  const job = await res.json();
+  render(job);
+  if (job.done) stopPolling();
+}
+
+function stopPolling() {
+  if (timer) clearInterval(timer);
+  timer = null;
+  $("go").disabled = false;
+  show($("stop"), false);
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  stopPolling();
+  show($("result"), false);
+  $("go").disabled = true;
+  const body = { account: $("account").value, sign_out_after: $("signout").checked };
+  const res = await fetch("/api/otp", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    render({ status: "không lấy được", detail: data.detail || "lỗi", error: true, done: true, elapsed: 0 });
+    return;
+  }
+  jobId = data.id;
+  render(data);
+  timer = setInterval(poll, 1000);
+  poll();
+});
+
+$("stop").addEventListener("click", async () => {
+  if (jobId) await fetch(`/api/otp/${jobId}/stop`, { method: "POST" });
+});
+
+$("copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("code").textContent);
+    $("copy").textContent = "đã sao chép";
+    setTimeout(() => ($("copy").textContent = "Sao chép mã"), 1500);
+  } catch { /* trình duyệt không cho thì người dùng tự bôi đen */ }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!doctype html><meta charset="utf-8"><title>Sign in to your account</title><body>
+<!-- Mô phỏng luồng đăng nhập thật của Microsoft (soi 08-10-2026):
+       địa chỉ -> "Verify your email" (không mật khẩu) -> Use your password
+       -> mật khẩu -> "We're updating our terms" -> "A quick note about your
+       Microsoft account" -> "Stay signed in?" -> hộp thư.
+     Hai màn ở giữa KHÔNG hỏi gì cả, chỉ cần bấm qua - không bấm thì agent
+     ngồi hết hạn đăng nhập ở đấy. Màn "a quick note" nằm trong iframe, đúng
+     như thật, nên chữ của nó không nằm trong body của trang chính.
+     Màn hình giữa có một cái BẪY: ô ghi nhãn "Email" nhưng là chỗ nhập địa chỉ
+     PHỤ để nhận mã, không phải chỗ nhập lại địa chỉ đăng nhập. -->
+<div id="step-email">
+  <form name="f1" onsubmit="return false">
+    <input name="loginfmt" type="email" placeholder="Email, phone, or Skype">
+    <input id="idSIButton9" type="submit" value="Next">
+  </form>
+</div>
+
+<div id="step-challenge" style="display:none">
+  <h1>Verify your email</h1>
+  <p>We'll send a code to ja*****@fviainboxes.com. To verify this is your email,
+     enter it here.</p>
+  <input name="proofconfirmation" type="email" placeholder="Email">
+  <button id="sendCode">Send code</button>
+  <a href="#" id="alreadyHave">Already received a code?</a>
+  <a href="#" id="usePassword">Use your password</a>
+</div>
+
+<div id="step-password" style="display:none">
+  <form name="f1" onsubmit="return false">
+    <input name="passwd" type="password" placeholder="Password">
+    <input id="pwNext" type="submit" value="Sign in">
+  </form>
+</div>
+
+<div id="step-terms" style="display:none">
+  <p>kemonagostinacp@outlook.com</p>
+  <h1>We're updating our terms</h1>
+  <p>As part of our efforts to improve your Microsoft experience, we wanted to
+     let you know that we have updated the Microsoft Services Agreement.</p>
+  <button id="termsNext">Next</button>
+  <a href="#" id="termsLearn">Learn more about these updates</a>
+</div>
+
+<div id="step-note" style="display:none">
+  <iframe id="noteFrame" title="A quick note" width="420" height="380"></iframe>
+</div>
+
+<div id="step-stay" style="display:none">
+  <p>Stay signed in?</p>
+  <button id="staySubmit">Yes</button>
+</div>
+
+<div id="inbox" style="display:none">
+  <div role="listbox" aria-label="Message list">
+    <div role="option" id="tt"><span>TikTok</span><span>Your verification code</span></div>
+  </div>
+  <div id="pane" role="document" style="display:none">
+    <p>Hi, 557213 is your verification code. Do not share it with anyone.</p>
+  </div>
+</div>
+
+<script>
+  // Giữ trạng thái qua reload: đăng nhập xong thì tải lại vẫn ở hộp thư, đúng
+  // như Outlook thật (phiên nằm trong cookie).
+  const STATE = "mail-login-state";
+  window.__typed = { email: "", password: "" };
+  const show = (id) => {
+    for (const s of ["step-email", "step-challenge", "step-password",
+                     "step-terms", "step-note", "step-stay", "inbox"])
+      document.getElementById(s).style.display = s === id ? "block" : "none";
+    try { sessionStorage.setItem(STATE, id); } catch {}
+  };
+  idSIButton9.onclick = () => {
+    window.__typed.email = document.querySelector("[name=loginfmt]").value;
+    if (window.__typed.email) show("step-challenge");
+  };
+  usePassword.onclick = () => { show("step-password"); return false; };
+  // Bẫy: bấm vào đây là mã bay sang hộp thư khác. Agent không được chạm.
+  sendCode.onclick = () => { window.__typed.trap = true; };
+  pwNext.onclick = () => {
+    window.__typed.password = document.querySelector("[name=passwd]").value;
+    // Hiện CHẬM, như Microsoft thật: kiểm đúng một lần ngay sau khi gửi mật
+    // khẩu là lỡ mất màn hình này.
+    // Hai màn thông báo chen vào trước "Stay signed in?".
+    if (window.__typed.password) setTimeout(() => show("step-terms"), 3500);
+  };
+  // Báo qua console: đăng nhập xong là trang chuyển sang outlook.live.com,
+  // mọi thứ đặt trên `window` mất sạch - test không đọc lại được nữa.
+  const passed = (name) => console.log("passed:" + name);
+  // Bẫy: "Learn more" mở trang khác, bấm vào là lạc khỏi luồng đăng nhập.
+  termsLearn.onclick = () => { window.__typed.trap = true; return false; };
+  termsNext.onclick = () => { passed("terms"); show("step-note"); };
+  noteFrame.srcdoc = `<!doctype html><meta charset="utf-8"><body>
+    <h1>A quick note about your Microsoft account</h1>
+    <p><b>Your important things are right here.</b> When you sign in, things
+       like your contacts, passwords, favorites, browsing history, and photos
+       and files are available across Microsoft products.</p>
+    <p><b>Your privacy is our priority.</b> To help protect your data, we use
+       encryption and other security best practices.</p>
+    <a href="#">Learn more</a>
+    <button id="noteOk">OK</button>
+    <script>
+      document.getElementById("noteOk").onclick = () => parent.__noteOk();
+    <\/script>`;
+  window.__noteOk = () => { passed("note"); show("step-stay"); };
+  staySubmit.onclick = () => {
+    show("inbox");
+    // Đăng nhập xong, Microsoft trả về hộp thư. Chỉ làm vậy khi đang ở trên
+    // tên miền đăng nhập, để trang này dùng được cả khi phục vụ tại outlook.
+    if (location.hostname.includes("login.live.com"))
+      location.href = "https://outlook.live.com/mail/0/?signedin=1";
+  };
+  tt.onclick = () => { pane.style.display = "block"; };
+
+  let saved = null;
+  try { saved = sessionStorage.getItem(STATE); } catch {}
+  show(saved === "inbox" ? "inbox" : "step-email");
+</script>

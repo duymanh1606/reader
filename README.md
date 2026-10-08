@@ -1,93 +1,127 @@
 # reader
 
+Dán `email|mật khẩu` của một hộp thư Outlook lên giao diện web; agent tự mở
+trình duyệt, đăng nhập hộp thư đó, đọc **mã OTP gần nhất** rồi trả mã về giao
+diện.
 
+Không có webhook, không có API hộp thư: agent đọc chữ trên trang Outlook như
+người đọc, và chấm điểm từng dãy số theo ngữ cảnh quanh nó (`reader/otp_extract.py`)
+nên nó không trả về số đơn hàng hay số điện thoại.
 
-## Getting started
+## Chạy
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://mekongai.site/duymanh/reader.git
-git branch -M main
-git push -uf origin main
+```bash
+uv sync
+uv run playwright install chromium      # chỉ lần đầu
+uv run python -m reader                 # rồi mở http://127.0.0.1:8000
 ```
 
-## Integrate with your tools
+Dán một dòng rồi bấm **Lấy mã**:
 
-* [Set up project integrations](https://mekongai.site/duymanh/reader/-/settings/integrations)
+```
+ten@outlook.com|MatKhau123
+```
 
-## Collaborate with your team
+Dấu phân cách nhận cả `|`, `:`, tab hay dấu cách; các cột phía sau (refresh
+token, client id…) bị bỏ qua. Dán mỗi email mà không có mật khẩu cũng được: agent
+mở cửa sổ Outlook và chờ bạn đăng nhập một lần — phiên nằm lại trong profile nên
+"một lần" là một lần thật.
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+## Những gì nó không tự làm
 
-## Test and Deploy
+Những màn hình **chỉ để thông báo** trên đường vào hộp thư ("We're updating our
+terms", "A quick note about your Microsoft account", "Welcome to the new
+Outlook"…) thì agent tự bấm qua — chúng không hỏi gì cả, và không bấm thì nó
+ngồi hết hạn ở đấy. Danh sách ấy còn dài ra, nên agent **không kể tên từng màn
+hình** mà hỏi ba câu về màn hình đang đứng:
 
-Use the built-in continuous integration in GitLab.
+1. **Nó có hỏi gì không?** Thấy ô nhập hay danh sách chọn đang hiện → không bấm,
+   vì đó là màn hình đang hỏi (ô "Email" của luồng không-mật-khẩu rơi vào đây).
+2. **Chữ trên đó có dính `BLOCKERS` không?** (2FA, CAPTCHA, xác minh qua email
+   phụ, đổi mật khẩu, tài khoản bị khoá) → không bấm, kể cả khi màn hình ấy chỉ
+   có mỗi cái nút "Next".
+3. **Nút có nghĩa "đọc rồi, đi tiếp" không?** Chỉ `Next`, `OK`, `Got it`,
+   `Continue`, `Skip`, `Not now`, `Accept`, `Tiếp tục`, `Đồng ý`… — khớp **cả
+   tên nút**, không khớp một phần ("OK" khớp một phần là trúng luôn "Book now").
+   Không có `Learn more`, `No`, `Cancel`, `Send code`, `Sign out`, `Delete`.
+   `Yes` cũng không: một mình nó không nói lên đang đồng ý với cái gì — riêng
+   "Stay signed in?" có hàm xử lý riêng.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+Qua cả ba thì bấm là an toàn: không gõ gì, không gửi mã đi đâu, cùng lắm là sang
+một màn hình mà vòng sau đọc lại từ đầu. Chỉ bấm trên tên miền của Microsoft
+(`TRUSTED_HOSTS`), soi cả trong iframe, và tối đa 8 lần một lượt. Luật này dùng
+cả lúc đăng nhập lẫn lúc đã vào `outlook.live.com` mà còn bị một hộp thoại chen
+trước danh sách mail.
 
-***
+Gặp **xác thực hai bước, CAPTCHA, mật khẩu sai, tài khoản bị khoá** hay yêu cầu
+**đổi mật khẩu** thì agent dừng, báo `cần bạn đăng nhập`, và **để nguyên cửa sổ**
+cho bạn xử lý; bạn làm xong trong lúc lượt còn hạn thì nó đi tiếp. Nó cũng không
+bao giờ thử gõ lại mật khẩu sau khi đã bế tắc một lần — gõ lại nhiều lần chỉ làm
+Microsoft khoá tài khoản.
 
-# Editing this README
+Mật khẩu chỉ được gõ trên đúng tên miền đăng nhập của Microsoft
+(`TRUSTED_HOSTS` trong `reader/mail_login.py`); một trang giả mạo ở tên miền khác
+không nhận được gì. Nó không vào log, không vào file, và không đi ra `/api/jobs`.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## Cấu hình
 
-## Suggestions for a good README
+Mọi thứ có mặc định dùng được ngay; đổi bằng biến môi trường:
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+| Biến | Mặc định | Nghĩa |
+|---|---|---|
+| `READER_HEADLESS` | `false` | `true` thì không hiện cửa sổ — nhưng gặp 2FA bạn không còn chỗ nào để xử lý |
+| `READER_PROFILES` | `.profiles` | nơi giữ phiên Outlook, mỗi email một thư mục con |
+| `READER_INBOX_URL` | `https://outlook.live.com/mail/0/` | hộp thư cần mở |
+| `READER_BROWSER_CHANNEL` | `chrome` | rỗng thì dùng Chromium của Playwright |
+| `READER_POLL_SECONDS` | `5` | nhịp đọc lại danh sách mail |
+| `READER_REFRESH_SECONDS` | `120` | nhịp tải lại trang (chỉ là lưới an toàn) |
+| `READER_TIMEOUT_SECONDS` | `180` | hạn cho cả một lượt lấy mã |
 
-## Name
-Choose a self-explaining name for your project.
+## API
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+| Đường | Việc |
+|---|---|
+| `POST /api/otp` `{"account": "mail\|pass", "sign_out_after": false}` | tạo một lượt, trả về `id` |
+| `GET /api/otp/{id}` | trạng thái: `status`, `detail`, `code`, `error`, `done` |
+| `POST /api/otp/{id}/stop` | dừng lượt đang chạy |
+| `GET /api/jobs` | các lượt gần đây (không chứa mật khẩu) |
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+Giao diện hỏi `GET /api/otp/{id}` mỗi giây, vì một lượt có thể mất tới vài phút:
+Playwright bản sync phải nằm trọn trong một luồng, nên mỗi lượt là một luồng
+riêng và kênh duy nhất đi ra là bản ghi trạng thái có khoá (`reader/jobs.py`).
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+## Mã nguồn
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+| File | Việc |
+|---|---|
+| `reader/server.py` + `reader/web.html` | giao diện và ba đường API |
+| `reader/jobs.py` | sổ các lượt, mỗi lượt một luồng |
+| `reader/fetch.py` | một lượt: mở trình duyệt → đăng nhập → vòng đọc hộp thư |
+| `reader/mail_login.py` | máy trạng thái đăng nhập Microsoft (bẫy "không mật khẩu", luật bấm qua thông báo) |
+| `reader/outlook.py` | nhận ra trạng thái trang, quét danh sách mail |
+| `reader/otp_extract.py` | chấm điểm dãy số để chọn đúng mã |
+| `reader/account.py` | tách chuỗi dán vào thành email + mật khẩu |
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+## Test
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+```bash
+uv run pytest
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+Chạy **offline hoàn toàn**: mọi request tới `outlook.live.com` / `login.live.com`
+bị chặn và trả bằng trang mẫu trong `reader/testpages/`, nên luật nhận dạng và
+mọi thứ phụ thuộc URL vẫn đúng như thật. `tests/test_fetch.py` đi hết đường
+thật — trang giới thiệu → cổng đăng nhập → màn hình "không mật khẩu" → mật khẩu
+→ "We're updating our terms" → "A quick note about your Microsoft account"
+(trong iframe) → "Stay signed in?" → hộp thư → mã — nên nó mất khoảng hai phút.
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+## Điểm yếu đã biết
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+1. **Phụ thuộc DOM Outlook.** Microsoft đổi layout là phần quét mù, và biểu hiện
+   ra ngoài chỉ là "hết giờ mà không thấy mã" chứ không phải một lỗi rõ ràng.
+2. **Không xác minh người gửi.** Mã lấy được là mã trong mail mới nhất trông
+   giống mail OTP, bất kể ai gửi.
+3. **Quét có ghi, không chỉ đọc.** Mã không nằm ở dòng xem trước thì agent mở
+   mail ra, tức là **đánh dấu đã đọc**.
+4. **"Gần nhất" là gần nhất trong hộp thư, không phải "mới tới".** Nếu bạn cần mã
+   vừa được gửi, hãy bấm Lấy mã **sau** khi dịch vụ kia gửi mail.

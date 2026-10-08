@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><title>Mail - Outlook</title><body>
+<!-- Hộp thư kiểu SPA: mail mới tự hiện ra trong danh sách sau vài giây, KHÔNG
+     cần tải lại trang. Đúng cách Outlook thật hoạt động. -->
+<div role="listbox" aria-label="Message list">
+  <div role="option"><span>LinkedIn</span><span>You have 3 new job alerts</span></div>
+</div>
+<div id="pane" role="document" style="display:none"></div>
+<script>
+  setTimeout(() => {
+    const row = document.createElement("div");
+    row.setAttribute("role", "option");
+    row.innerHTML = "<span>TikTok</span><span>Your verification code</span>";
+    row.onclick = () => {
+      pane.textContent = "Hi, 771205 is your verification code.";
+      pane.style.display = "block";
+    };
+    document.querySelector("[role=listbox]").append(row);
+  }, 2000);
+</script>

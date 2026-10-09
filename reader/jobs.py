@@ -155,13 +155,28 @@ class Jobs:
 
     # -- luồng làm việc ----------------------------------------------------
     def _work(self, job: Job, password: str, sign_out_after: bool) -> None:
+        # Mốc đo thời gian: mỗi lần `report` đổi trạng thái, ghi lại chặng vừa
+        # qua kéo dài bao lâu và đã trôi bao nhiêu giây từ lúc bắt đầu lượt.
+        # Dùng `monotonic` chứ không phải `time.time` để chỉnh giờ hệ thống
+        # giữa chừng không làm thời lượng âm.
+        t0 = time.monotonic()
+        stage = {"name": None, "since": t0}
+
         def report(status: str, detail: str = "") -> None:
+            now = time.monotonic()
             with self._lock:
                 job.status = status
                 job.detail = detail
                 if status == "cần bạn đăng nhập":
                     job.blocked = detail or status
-            logger.info("[%s] %s %s", job.email, status, detail)
+            prev = ""
+            if stage["name"] is not None and status != stage["name"]:
+                prev = f" | chặng '{stage['name']}' {now - stage['since']:.1f}s"
+            if status != stage["name"]:
+                stage["name"] = status
+                stage["since"] = now
+            logger.info("[%s] %s %s | +%.1fs%s",
+                        job.email, status, detail, now - t0, prev)
 
         def snap(anh: bytes, url: str) -> None:
             with self._lock:
@@ -180,6 +195,17 @@ class Jobs:
 
     def _finish(self, job: Job, result: Result) -> None:
         self._write_result(job, result)
+        # Một dòng tổng kết cho mỗi lượt: kết quả + tổng thời gian chạy. Có mã
+        # thì INFO; không lấy được hay bị chặn thì WARNING kèm lý do, để `grep
+        # WARNING reader.log` gom đúng các lượt cần xem. KHÔNG log `job.code` -
+        # mã OTP không thuộc về file log.
+        elapsed = (job.finished_at or time.time()) - job.started_at
+        if job.code:
+            logger.info("[%s] XONG sau %.1fs: có mã (%s)",
+                        job.email, elapsed, job.where or "?")
+        else:
+            logger.warning("[%s] XONG sau %.1fs: %s - %s",
+                           job.email, elapsed, job.status, job.error or "")
         job._done.set()          # sau khi đã ghi xong, không phải trước
         self._call_webhook(job)
         self._send_mail(job)

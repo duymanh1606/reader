@@ -81,6 +81,15 @@ def run(
     `should_stop()` trả True thì dừng sớm.
     """
     stop = should_stop or (lambda: False)
+    # Nhớ chặng gần nhất đã báo, để nếu lượt ngã vì một lỗi không ngờ thì log
+    # nói được nó ngã ở đâu (mở trình duyệt? đăng nhập? đang đọc?).
+    last_status = {"v": "đang mở trình duyệt"}
+    _report = report
+
+    def report(status: str, detail: str = "") -> None:
+        last_status["v"] = status
+        _report(status, detail)
+
     profile_dir = profile_mo.profile_for(settings.profiles_dir, email)
     profile_dir.mkdir(parents=True, exist_ok=True)
     profile_mo.clear_stale_lock(profile_dir)
@@ -113,7 +122,8 @@ def run(
         except Exception as exc:
             if _closed(exc):
                 return Result(error="cửa sổ trình duyệt đã bị đóng")
-            logger.exception("lượt lấy mã của %s đổ", email)
+            logger.exception("lượt lấy mã của %s đổ ở chặng '%s'",
+                             email, last_status["v"])
             return Result(error=f"lỗi: {exc}")
         finally:
             try:
@@ -136,8 +146,15 @@ def _watch(page, email, password, settings: Settings, report, stop,
     login_failed = False       # đã bế tắc một lần thì không gõ lại mật khẩu
     waiting_for_human = False
     notice_clicks = 0          # màn hình thông báo đã bấm qua, cả sau khi vào
+    loops = 0                  # số vòng đã quay, để log chi tiết đánh số được
 
+    logger.debug("hộp thư %s: bắt đầu canh, hạn %ss", email,
+                 settings.timeout_seconds)
     while time.monotonic() < deadline:
+        loops += 1
+        remaining = deadline - time.monotonic()
+        logger.debug("hộp thư %s: vòng #%d, còn %.0fs, đã xem %d mail, url=%s",
+                     email, loops, remaining, len(seen), (page.url or "")[:60])
         if stop():
             raise Cancelled
         if page.is_closed():
@@ -220,6 +237,7 @@ def _watch(page, email, password, settings: Settings, report, stop,
         # nháy liên tục mà không nhanh thêm chút nào.
         if time.monotonic() - last_reload >= settings.refresh_seconds:
             last_reload = time.monotonic()
+            logger.debug("hộp thư %s: tải lại trang (lưới an toàn)", email)
             try:
                 page.reload(wait_until="domcontentloaded", timeout=60000)
             except Exception as exc:
@@ -227,6 +245,8 @@ def _watch(page, email, password, settings: Settings, report, stop,
                     raise
                 logger.debug("tải lại hộp thư không xong: %s", exc)
 
+    logger.debug("hộp thư %s: hết %ss, dừng canh sau %d vòng, đã xem %d mail",
+                 email, settings.timeout_seconds, loops, len(seen))
     return None
 
 

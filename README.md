@@ -195,6 +195,49 @@ nohup uv run python -m reader --host 0.0.0.0 --token chuoi-cua-ban \
 tail -f reader.log                 # systemd thì: journalctl -u <unit> -f
 ```
 
+### Theo dõi log
+
+Mặc định log ở mức `INFO` — vừa đủ để biết mỗi lượt đang ở chặng nào và kết
+thúc ra sao. Dòng đầu tiên lúc khởi động in ra nhịp chạy đang dùng:
+
+```
+nhịp chạy: poll 5s, tải lại 120s, hạn mỗi lượt 180s, hạn đăng nhập 90s; headless=True, log=INFO
+```
+
+Mỗi lần đổi trạng thái có **tổng thời gian đã trôi** và **thời lượng chặng vừa
+qua**, rồi mỗi lượt khép lại bằng một dòng tổng kết:
+
+```
+[ten@outlook.com] đang đọc hộp thư | +8.4s | chặng 'đang đăng nhập Outlook' 5.1s
+[ten@outlook.com] XONG sau 9.2s: có mã (dòng xem trước)
+```
+
+Lượt không lấy được hay bị chặn ghi ở mức `WARNING` kèm lý do, nên gom nhanh
+các lượt cần xem bằng:
+
+```bash
+grep -E "WARNING|XONG" reader.log
+```
+
+Khi một lượt **đứng hình** và muốn nhìn sâu hơn — từng nhịp poll, số mail đã
+xem, mỗi lần tải lại trang, mỗi lần quét danh sách — bật mức `DEBUG`:
+
+```bash
+uv run python -m reader --host 0.0.0.0 --verbose     # hoặc -v
+READER_LOG_LEVEL=DEBUG uv run python -m reader --host 0.0.0.0
+```
+
+```
+[ten@outlook.com] vòng #7, còn 142s, đã xem 3 mail, url=https://outlook.live.com/mail/0/
+quét 8/23 dòng trên cùng
+quét xong: 2 mail nghi là mail mã, chưa rút được mã
+```
+
+**Mật khẩu và mã OTP không bao giờ vào log** ở bất kỳ mức nào: dòng tổng kết chỉ
+ghi "có mã" cùng nơi tìm thấy (`dòng xem trước` / `nội dung mail`), không ghi con
+số. Email hộp thư thì có xuất hiện, nên `reader.log` vẫn nên giữ kín như mọi file
+khác của dự án.
+
 ### Nhìn được màn hình của agent trên server
 
 Server không có cửa sổ nào hiện ra, nên mỗi nhịp poll agent **chụp lại màn hình
@@ -319,6 +362,7 @@ Mọi thứ có mặc định dùng được ngay; đổi bằng biến môi tr�
 | `READER_POLL_SECONDS` | `5` | nhịp đọc lại danh sách mail |
 | `READER_REFRESH_SECONDS` | `120` | nhịp tải lại trang (chỉ là lưới an toàn) |
 | `READER_TIMEOUT_SECONDS` | `180` | hạn cho cả một lượt lấy mã |
+| `READER_LOG_LEVEL` | `INFO` | `DEBUG` để log chi tiết từng nhịp poll (hoặc cờ `--verbose`) |
 
 ## API
 

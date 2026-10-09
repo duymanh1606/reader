@@ -181,7 +181,10 @@ def scan_for_code(page, seen: dict, pause=None, max_rows: int = 8) -> Hit | None
     Đếm tới `MAX_ATTEMPTS` rồi thôi.
     """
     rows = message_rows(page)
-    for index in range(min(len(rows), max_rows)):
+    scanned = min(len(rows), max_rows)
+    logger.debug("quét %d/%d dòng trên cùng", scanned, len(rows))
+    candidates = 0
+    for index in range(scanned):
         row = rows[index]
         try:
             preview = (row.inner_text(timeout=1000) or "").strip()
@@ -192,6 +195,7 @@ def scan_for_code(page, seen: dict, pause=None, max_rows: int = 8) -> Hit | None
         if not looks_like_otp_mail(preview):
             seen[preview] = MAX_ATTEMPTS      # không phải mail mã: bỏ qua hẳn
             continue
+        candidates += 1
         seen[preview] = seen.get(preview, 0) + 1
 
         # Mã thường đã nằm trong dòng xem trước; thử trước khi mở mail, vì mở
@@ -215,4 +219,6 @@ def scan_for_code(page, seen: dict, pause=None, max_rows: int = 8) -> Hit | None
             seen[preview] = MAX_ATTEMPTS
             logger.info("tìm thấy mã trong nội dung mail (%s)", found.why)
             return Hit(found.code, found.why, "nội dung mail", _first_line(preview))
+    logger.debug("quét xong: %d mail nghi là mail mã, chưa rút được mã",
+                 candidates)
     return None

@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import logging
+import os
 
 import uvicorn
 
@@ -42,10 +43,19 @@ def main() -> None:
     parser.add_argument("--headless", action="store_true",
                         help="không hiện cửa sổ trình duyệt (gặp 2FA thì bạn "
                              "không còn chỗ nào để xử lý)")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="log chi tiết (DEBUG): từng nhịp poll, số mail đã "
+                             "xem, mỗi lần tải lại trang. Hoặc đặt "
+                             "READER_LOG_LEVEL=DEBUG")
     args = parser.parse_args()
 
+    # Mức log: --verbose > READER_LOG_LEVEL > INFO. Để bạn tự theo dõi sâu khi
+    # cần mà không phải sửa code; mặc định vẫn gọn.
+    level_name = os.getenv("READER_LOG_LEVEL", "").strip().upper()
+    level = logging.DEBUG if args.verbose else getattr(
+        logging, level_name, logging.INFO)
     logging.basicConfig(
-        level=logging.INFO,
+        level=level,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
@@ -53,6 +63,14 @@ def main() -> None:
         settings = dataclasses.replace(settings, headless=True)
     if args.token is not None:
         settings = dataclasses.replace(settings, token=args.token.strip())
+
+    logger.info(
+        "nhịp chạy: poll %ss, tải lại %ss, hạn mỗi lượt %ss, hạn đăng nhập %ss; "
+        "headless=%s, log=%s",
+        settings.poll_seconds, settings.refresh_seconds,
+        settings.timeout_seconds, settings.login_timeout_seconds,
+        settings.headless, logging.getLevelName(level),
+    )
 
     if settings.headless and not has_display():
         logger.info("máy không có màn hình nên chạy headless - gặp 2FA hay "

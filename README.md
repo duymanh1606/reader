@@ -109,19 +109,42 @@ export READER_WEBHOOK_SECRET=chuoi-bi-mat
 exec uv run python -m reader --host 0.0.0.0 "$@"
 ```
 
+Một lệnh cho việc dùng hằng ngày — chạy nền **và** xem log ngay:
+
 ```bash
-chmod +x chay.sh
-nohup ./chay.sh > reader.log 2>&1 &     # chạy nền, log vào reader.log
-tail -f reader.log                      # dòng đầu có sẵn địa chỉ kèm token
+cd ~/reader && pkill -f "python -m reader"; sleep 1; nohup ./chay.sh > reader.log 2>&1 & sleep 2; tail -f reader.log
+```
+
+`Ctrl+C` chỉ thoát phần xem log, **reader vẫn chạy** — vì `nohup` đã tách nó
+khỏi terminal. Và `pkill` ở đầu làm lệnh an toàn khi gọi lại: không bao giờ có
+hai tiến trình tranh cổng 5678, thứ gây ra lỗi "Address already in use" mà
+nhìn log reader thì không hiểu vì sao.
+
+Gõ mỗi lần thì dài, nên đặt thành một từ trong `~/.bashrc`:
+
+```bash
+reader-run() {
+    cd ~/reader || return 1
+    pkill -f "python -m reader" 2>/dev/null; sleep 1
+    nohup ./chay.sh > reader.log 2>&1 &
+    sleep 2; tail -f reader.log
+}
+reader-log()  { tail -f ~/reader/reader.log; }
+reader-stop() { pkill -f "python -m reader" && echo "đã dừng"; }
 ```
 
 Mấy việc hay phải làm:
 
 ```bash
+pgrep -af "python -m reader"     # đang chạy không
 pkill -f "python -m reader"      # dừng
 ./chay.sh --check                # thử mở trình duyệt, in lỗi thật nếu hỏng
-curl -s localhost:5678/api/jobs -H "X-Reader-Token: $READER_TOKEN"   # xem các lượt
+curl -s localhost:5678/api/jobs \
+  -H "X-Reader-Token: $(grep -oP '^export READER_TOKEN=\K.*' chay.sh)"   # xem các lượt
 ```
+
+`$READER_TOKEN` của shell bạn thường rỗng vì token nằm trong `chay.sh` chứ
+không trong môi trường hiện tại — nên lệnh trên đọc thẳng từ file.
 
 **Khởi động lại là mất hết các lượt đang chạy** (chúng chỉ sống trong bộ nhớ),
 kể cả mã đã lấy được. Mã nào cần giữ thì để `webhook` hoặc mail mang đi ngay

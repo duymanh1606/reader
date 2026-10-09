@@ -29,6 +29,34 @@ mở cửa sổ Outlook và chờ bạn đăng nhập một lần — phiên n�
 
 ## Chạy trên server, mở từ máy khác
 
+Một lệnh, hỏi những gì nó cần:
+
+```bash
+./setup.sh
+```
+
+Nó cài phụ thuộc và Chromium, sinh `chay.sh` (file mang token, đã được
+`.gitignore` chặn), rồi **kiểm tới tận chỗ chứng minh được**: gọi ra Internet
+qua proxy và in IP thật mà bên ngoài nhìn thấy. Chạy lại được nhiều lần — nó
+không ghi đè `chay.sh` đã có, vì ghi đè là mất token.
+
+```bash
+./setup.sh --check     # chỉ kiểm cái đang có, không sửa gì
+READER_TOKEN=... READER_PROXY=... ./setup.sh --yes    # không hỏi gì, cho script
+```
+
+Bốn thứ nó bắt được mà chạy tay thì chỉ hiện ra sau, dưới dạng triệu chứng khác:
+
+| Nó báo | Nghĩa là |
+|---|---|
+| `READER_TOKEN RỖNG` | giao diện mở cho mọi người, mà trang này nhận **mật khẩu hộp thư** |
+| `READER_PROXY còn chứa dấu '<'` | placeholder chưa thay bằng token thật |
+| `407` / `403` / `503` từ proxy | token sai / chưa có mapping / route hỏng — ba chuyện khác nhau, ba cách chữa khác nhau |
+| `không có phản hồi nào` | IP máy này ngoài `allowed_client_cidrs` của gateway, nó đóng kết nối không trả lời |
+| `user namespace bị khoá` | Chromium sẽ chạy **không sandbox** — in luôn lệnh sysctl để mở |
+
+Muốn làm tay thì ba lệnh này là đủ:
+
 ```bash
 uv sync
 uv run playwright install --with-deps chromium     # server trắng thì cần cả --with-deps
@@ -409,6 +437,7 @@ riêng và kênh duy nhất đi ra là bản ghi trạng thái có khoá (`reade
 | `reader/otp_extract.py` | chấm điểm dãy số để chọn đúng mã |
 | `reader/account.py` | tách chuỗi dán vào thành email + mật khẩu |
 | `reader/proxy.py` | đọc chuỗi proxy cho trình duyệt |
+| `setup.sh` | dựng reader trên server: phụ thuộc, `chay.sh`, kiểm đường ra |
 | `reader/webhook.py` | bắn mã về URL của bạn |
 | `reader/mailer.py` | gửi mã về hộp thư của bạn qua SMTP |
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +20,7 @@ DAY_DU = Mailbox(host="smtp.vi-du.com", port=587, user="toi@vi-du.com",
 class MaySMTP:
     """Máy chủ SMTP giả: ghi lại đã làm gì, không chạm tới mạng."""
 
-    cuoi: "MaySMTP | None" = None
+    cuoi: MaySMTP | None = None
 
     def __init__(self, host, port, timeout=None):
         self.host, self.port = host, port
@@ -173,7 +174,7 @@ def test_bam_nut_tren_giao_dien_cung_tu_gui_mail(settings, monkeypatch, smtp):
         for _ in range(50):                      # chờ luồng nền xong
             if client.get(f"/api/otp/{job_id}").json()["done"]:
                 break
-            import time; time.sleep(0.05)
+            time.sleep(0.05)
     assert smtp.cuoi is not None, "bấm nút trên giao diện mà không gửi mail"
     assert "483921" in smtp.cuoi.thu["Subject"]
     assert smtp.cuoi.thu["To"] == "toi@vi-du.com"

@@ -4,12 +4,9 @@ __pycache__/
 # Phiên Outlook của từng hộp thư nằm ở đây - không bao giờ commit.
 .profiles/
 
-# Token truy cập và log chạy thật - cả hai đều là thứ của một lần triển khai.
+# Cấu hình của một lần triển khai: mang token, mật khẩu proxy/SMTP.
+.env
+# chay.sh là dạng cũ của .env (./setup.sh tự chuyển sang) - cùng lý do.
+chay.sh
 .token
 *.log
-
-
-# Script chạy của một lần triển khai. README đưa mẫu có READER_TOKEN và
-# READER_PROXY, tức nó mang sẵn hai token - không bao giờ commit.
-
-chay.sh

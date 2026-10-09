@@ -1,12 +1,7 @@
 """Chạy giao diện: `uv run python -m reader` rồi mở http://127.0.0.1:5678
 
-Trên server, nghe cả ngoài và khoá bằng token bạn tự đặt:
-
-    uv run python -m reader --host 0.0.0.0 --token chuoi-cua-ban
-
-Hoặc qua biến môi trường, nếu không muốn token hiện trong `ps`:
-
-    READER_TOKEN=chuoi-cua-ban uv run python -m reader --host 0.0.0.0
+Cấu hình đọc từ biến môi trường và từ `.env` ở gốc dự án (xem
+`reader/config.py`). Trên server, `./setup.sh` sinh `.env` và unit systemd.
 """
 
 from __future__ import annotations
@@ -18,13 +13,14 @@ import os
 
 import uvicorn
 
-from reader.config import Settings, has_display
+from reader.config import ENV_FILE, Settings, has_display, load_env_file
 from reader.server import create_app
 
 logger = logging.getLogger("reader")
 
 
 def main() -> None:
+    loaded_env = load_env_file()
     settings = Settings.from_env()
     parser = argparse.ArgumentParser(description="Dán email Outlook, nhận mã OTP.")
     parser.add_argument("--host", default=settings.host,
@@ -64,6 +60,11 @@ def main() -> None:
     if args.token is not None:
         settings = dataclasses.replace(settings, token=args.token.strip())
 
+    if loaded_env:
+        logger.info("đọc cấu hình từ %s", ENV_FILE)
+        if ENV_FILE.stat().st_mode & 0o077:
+            logger.warning("%s đọc được bởi người khác trên máy - nó mang token "
+                           "và mật khẩu: chmod 600 %s", ENV_FILE, ENV_FILE)
     logger.info(
         "nhịp chạy: poll %ss, tải lại %ss, hạn mỗi lượt %ss, hạn đăng nhập %ss; "
         "headless=%s, log=%s",
@@ -143,6 +144,10 @@ def _check(settings: Settings) -> bool:
               or "libn" in thap):
             print("\n-> Thiếu thư viện hệ thống cho Chromium:\n"
                   "   uv run playwright install --with-deps chromium", flush=True)
+        elif "err_proxy" in thap or "err_tunnel" in thap:
+            print("\n-> Trình duyệt mở được nhưng không đi qua được proxy:\n"
+                  "   kiểm READER_PROXY, rồi ./setup.sh --check để curl thử "
+                  "cùng proxy đó", flush=True)
         elif not settings.headless:
             print("\n-> Máy không có màn hình thì phải chạy headless:\n"
                   "   thêm --headless, hoặc READER_HEADLESS=true", flush=True)

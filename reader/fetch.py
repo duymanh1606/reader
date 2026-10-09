@@ -14,7 +14,9 @@ from dataclasses import dataclass
 
 from playwright.sync_api import sync_playwright
 
-from reader import outlook, profile as profile_mo, proxy as proxy_mo
+from reader import outlook
+from reader import profile as profile_mo
+from reader import proxy as proxy_mo
 from reader.browser import launch_persistent
 from reader.config import Settings
 from reader.mail_login import (

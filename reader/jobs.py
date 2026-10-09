@@ -17,9 +17,10 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
+from reader import mailer as mailer_mo
+from reader import webhook as webhook_mo
 from reader.config import Settings
 from reader.fetch import Result, run
-from reader import mailer as mailer_mo, webhook as webhook_mo
 
 logger = logging.getLogger(__name__)
 

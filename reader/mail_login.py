@@ -178,17 +178,15 @@ def find_blocker(page) -> str | None:
     return blocker_in(_page_text(page))
 
 
-def _click(locator, pace=None) -> None:
+def _click(locator) -> None:
     locator.click(timeout=15000)
-    if pace is not None:
-        pace.pause()
 
 
-def _type(locator, value: str, pace=None) -> None:
+def _type(locator, value: str) -> None:
     """Gõ từng ký tự - form của Microsoft cũng là form React."""
     locator.click(timeout=15000)
     locator.fill("", timeout=15000)
-    locator.press_sequentially(value, delay=(pace.typing_delay if pace else 0))
+    locator.press_sequentially(value)
 
 
 def logged_in(page) -> bool:
@@ -279,11 +277,10 @@ class _Login:
     lần ra thứ tự ưu tiên, mà thứ tự ở đây là thứ quyết định đúng/sai.
     """
 
-    def __init__(self, page, email: str, password: str, pace=None):
+    def __init__(self, page, email: str, password: str):
         self.page = page
         self.email = email
         self.password = password
-        self.pace = pace
         self.typed_email = False
         self.typed_password = False
         # Hai cờ DÍNH (hai cờ trên bị gỡ sau mỗi nhịp chờ): đã từng gõ địa chỉ
@@ -297,7 +294,7 @@ class _Login:
     # -- từng màn hình, theo đúng thứ tự ưu tiên ---------------------------
     def answer_stay_signed_in(self) -> bool:
         """Kiểm ở ĐẦU mỗi vòng: màn hình đó hiện chậm hơn một nhịp là lỡ."""
-        if _stay_signed_in(self.page, self.pace):
+        if _stay_signed_in(self.page):
             self.page.wait_for_timeout(2000)
             return True
         return False
@@ -317,7 +314,7 @@ class _Login:
             return False
         self.notice_clicks += 1
         logger.info("hộp thư %s: bấm qua một màn hình thông báo", self.email)
-        _click(button, self.pace)
+        _click(button)
         self.page.wait_for_timeout(2000)
         return True
 
@@ -335,7 +332,7 @@ class _Login:
             return False
         self.switch_clicks += 1
         logger.info("hộp thư %s: chuyển sang đăng nhập bằng mật khẩu", self.email)
-        _click(link, self.pace)
+        _click(link)
         self.page.wait_for_timeout(2000)
         return True
 
@@ -358,7 +355,7 @@ class _Login:
 
         link = _signin_link(self.page)
         if link is not None:
-            _click(link, self.pace)
+            _click(link)
             self.page.wait_for_timeout(2000)
         else:
             self.page.wait_for_timeout(1000)
@@ -404,7 +401,7 @@ class _Login:
                 self.page.wait_for_timeout(1500)
                 self.typed_password = False
                 return True
-            _type(o_mat_khau, self.password, self.pace)
+            _type(o_mat_khau, self.password)
             self.typed_password = True
             self.password_done = True
             logger.info("hộp thư %s: đã nhập mật khẩu", self.email)
@@ -419,14 +416,14 @@ class _Login:
                 self.page.wait_for_timeout(1500)
                 self.typed_email = False
                 return True
-            _type(o_dia_chi, self.email, self.pace)
+            _type(o_dia_chi, self.email)
             self.typed_email = True
             self.email_done = True
             logger.info("hộp thư %s: đã nhập địa chỉ", self.email)
 
         nut = _first_visible(self.page, SUBMIT_BUTTONS)
         if nut is not None:
-            _click(nut, self.pace)
+            _click(nut)
         else:
             self.page.keyboard.press("Enter")
         self.page.wait_for_timeout(2000)
@@ -437,7 +434,6 @@ def login(
     page,
     email: str,
     password: str,
-    pace=None,
     timeout_seconds: int = 90,
     should_stop=None,
 ) -> None:
@@ -452,7 +448,7 @@ def login(
             f"'{email}|matkhau'"
         )
 
-    session = _Login(page, email, password, pace)
+    session = _Login(page, email, password)
     deadline = time.monotonic() + timeout_seconds
 
     while time.monotonic() < deadline:
@@ -488,7 +484,7 @@ def login(
     )
 
 
-def _stay_signed_in(page, pace=None) -> bool:
+def _stay_signed_in(page) -> bool:
     """Trả lời màn hình "Stay signed in?". Trả True nếu vừa bấm một nút."""
     text = _page_text(page)
     if "stay signed in" not in text and "duy trì đăng nhập" not in text:
@@ -514,11 +510,11 @@ def _stay_signed_in(page, pace=None) -> bool:
         return False
 
     logger.info("hộp thư: trả lời 'Stay signed in?'")
-    _click(button, pace)
+    _click(button)
     return True
 
 
-def sign_out(page, pace=None) -> str:
+def sign_out(page) -> str:
     """Đăng xuất khỏi hộp thư, rồi dọn cookie.
 
     Hai lớp: gọi đúng địa chỉ
@@ -530,8 +526,6 @@ def sign_out(page, pace=None) -> str:
     try:
         page.goto(LOGOUT_URL, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
-        if pace is not None:
-            pace.pause()
     except Exception as exc:
         logger.warning("đăng xuất hộp thư không xong: %s", exc)
     try:
@@ -541,36 +535,3 @@ def sign_out(page, pace=None) -> str:
     logger.info("đã đăng xuất hộp thư")
     return "đã đăng xuất hộp thư"
 
-
-def fresh_login(
-    page,
-    email: str,
-    password: str,
-    inbox_url: str,
-    pace=None,
-    should_stop=None,
-    timeout_seconds: int = 90,
-) -> None:
-    """Đăng XUẤT phiên cũ rồi mới đăng nhập, cuối cùng mở hộp thư.
-
-    Vì sao luôn đăng xuất trước, kể cả khi chưa chắc có phiên nào: còn phiên
-    cũ thì `login.srf` không hỏi gì cả, nó đưa thẳng vào hộp thư của TÀI KHOẢN
-    TRƯỚC. Lúc đó luồng canh ngồi canh đúng một hộp thư sai, và mã của tài
-    khoản vừa dán thì không bao giờ tới.
-
-    Đọc tên tài khoản đang đăng nhập để so cũng được, nhưng phải dò giao diện
-    quản lý tài khoản của Microsoft - thứ đổi luôn. Đăng xuất thì chắc chắn,
-    và chỉ tốn một lần tải trang.
-    """
-    # Kiểm TRƯỚC khi đăng xuất. Không có mật khẩu mà vẫn đăng xuất là đá phiên
-    # đang có của người dùng ra rồi mới báo không đăng nhập lại được.
-    if not password:
-        raise MailLoginBlocked(
-            f"chưa có mật khẩu hộp thư cho {email} - dán dạng "
-            f"'{email}|matkhau'"
-        )
-
-    sign_out(page, pace)
-    page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
-    login(page, email, password, pace, timeout_seconds, should_stop)
-    page.goto(inbox_url, wait_until="domcontentloaded", timeout=60000)

@@ -13,8 +13,6 @@ from reader.otp_extract import extract_code
 
 logger = logging.getLogger(__name__)
 
-INBOX_URL = "https://outlook.live.com/mail/0/"
-
 # Chưa đăng nhập, outlook.live.com/mail/0/ KHÔNG đưa tới màn hình đăng nhập mà
 # đá sang trang GIỚI THIỆU trên www.microsoft.com. Trang đó không có ô đăng
 # nhập nào, nên "không phải trang đăng nhập" hoàn toàn không có nghĩa là "đã
@@ -168,7 +166,7 @@ def _first_line(text: str) -> str:
     return ""
 
 
-def scan_for_code(page, seen: dict, pause=None, max_rows: int = 8) -> Hit | None:
+def scan_for_code(page, seen: dict, max_rows: int = 8) -> Hit | None:
     """Duyệt vài mail MỚI NHẤT, trả về mã đầu tiên tìm được.
 
     Dòng trên cùng là mail mới nhất, nên "mã đầu tiên tìm được" cũng là mã gần
@@ -206,14 +204,10 @@ def scan_for_code(page, seen: dict, pause=None, max_rows: int = 8) -> Hit | None
             logger.info("tìm thấy mã trong danh sách (%s)", found.why)
             return Hit(found.code, found.why, "dòng xem trước", _first_line(preview))
 
-        if pause:
-            pause()
         try:
             row.click(timeout=3000)
         except Exception:
             continue
-        if pause:
-            pause()
         found = extract_code(reading_pane_text(page))
         if found:
             seen[preview] = MAX_ATTEMPTS

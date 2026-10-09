@@ -1,17 +1,50 @@
 """Cấu hình. Mọi thứ có mặc định dùng được ngay; đổi bằng biến môi trường.
 
-Biến môi trường, không file cấu hình: chúng hợp với cách dùng thật (một lần
-chạy, hoặc một unit systemd), và `READER_TOKEN` thì KHÔNG nên nằm trong một
-file trong repo.
+Trên server, các biến nằm trong `.env` ở gốc dự án (mode 600, đã bị
+`.gitignore` chặn - nó mang token và mật khẩu). `load_env_file` nạp file đó
+lúc khởi động, nên `python -m reader`, `--check` và unit systemd đọc cùng một
+chỗ. Biến đã đặt sẵn trong môi trường thì thắng file.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+ENV_FILE = ROOT / ".env"
+
+
+def load_env_file(path: Path = ENV_FILE) -> bool:
+    """Nạp `KEY=value` từ `path` vào `os.environ`. False nếu không có file.
+
+    Biến đã có trong môi trường thì giữ nguyên: `READER_PORT=8080 python -m
+    reader` vẫn phải thắng `.env`. Nhận cả `export KEY=...` và giá trị trong
+    ngoặc kép/đơn, và chú thích cuối dòng (` # ...`) khi giá trị không nằm
+    trong ngoặc; không nội suy `$BIEN` - mật khẩu có `$` phải đi nguyên văn.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return False
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.removeprefix("export ").partition("=")
+        if not sep:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        else:
+            # `KEY=gia-tri   # chú thích`: dấu # chỉ mở chú thích khi đứng sau
+            # khoảng trắng, để `pass#123` vẫn là mật khẩu nguyên vẹn.
+            value = re.split(r"\s+#", value, maxsplit=1)[0] if value[:1] != "#" else ""
+        os.environ.setdefault(key.strip(), value)
+    return True
 
 
 def _flag(name: str, default: bool) -> bool:
@@ -55,7 +88,9 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 5678
     # "chrome" dùng Chrome thật nếu máy có; rỗng thì dùng Chromium của
-    # Playwright. Chrome thật bị Microsoft nghi ngờ ít hơn.
+    # Playwright. Chrome thật bị Microsoft nghi ngờ ít hơn, nhưng server gần
+    # như không bao giờ có nó - nên `from_env` chỉ mặc định "chrome" khi máy
+    # có màn hình.
     browser_channel: str = "chrome"
     # Proxy cho trình duyệt, dạng http://user:pass@host:port. Xem reader/proxy.py:
     # IP trung tâm dữ liệu là lý do hay gặp nhất khiến Microsoft hỏi 2FA.
@@ -90,7 +125,7 @@ class Settings:
         )
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         return cls(
             profiles_dir=Path(os.getenv("READER_PROFILES", str(cls.profiles_dir))),
             inbox_url=os.getenv("READER_INBOX_URL", cls.inbox_url),
@@ -107,7 +142,9 @@ class Settings:
             smtp_password=os.getenv("READER_SMTP_PASSWORD", cls.smtp_password),
             mail_from=os.getenv("READER_MAIL_FROM", cls.mail_from).strip(),
             mail_to=os.getenv("READER_MAIL_TO", cls.mail_to).strip(),
-            browser_channel=os.getenv("READER_BROWSER_CHANNEL", cls.browser_channel),
+            browser_channel=os.getenv(
+                "READER_BROWSER_CHANNEL", cls.browser_channel if has_display() else ""
+            ).strip(),
             poll_seconds=_int("READER_POLL_SECONDS", cls.poll_seconds),
             refresh_seconds=_int("READER_REFRESH_SECONDS", cls.refresh_seconds),
             timeout_seconds=_int("READER_TIMEOUT_SECONDS", cls.timeout_seconds),

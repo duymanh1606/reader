@@ -1,14 +1,14 @@
 # reader
 
-Dán `email|mật khẩu` của một hộp thư Outlook lên giao diện web; agent tự mở
+Nhập email và mật khẩu của một hộp thư Outlook trên giao diện web; agent tự mở
 trình duyệt, đăng nhập hộp thư đó, đọc **mã OTP gần nhất** rồi trả mã về giao
-diện.
+diện (và, nếu muốn, bắn về webhook hoặc gửi mail cho bạn).
 
-Không có webhook, không có API hộp thư: agent đọc chữ trên trang Outlook như
-người đọc, và chấm điểm từng dãy số theo ngữ cảnh quanh nó (`reader/otp_extract.py`)
-nên nó không trả về số đơn hàng hay số điện thoại.
+Không có API hộp thư: agent đọc chữ trên trang Outlook như người đọc, và chấm
+điểm từng dãy số theo ngữ cảnh quanh nó (`reader/otp_extract.py`) nên nó không
+trả về số đơn hàng hay số điện thoại.
 
-## Chạy
+## Chạy trên máy của bạn
 
 ```bash
 uv sync
@@ -16,184 +16,91 @@ uv run playwright install chromium      # chỉ lần đầu
 uv run python -m reader                 # rồi mở http://127.0.0.1:5678
 ```
 
-Dán một dòng rồi bấm **Lấy mã**:
-
-```
-ten@outlook.com|MatKhau123
-```
-
-Dấu phân cách nhận cả `|`, `:`, tab hay dấu cách; các cột phía sau (refresh
-token, client id…) bị bỏ qua. Dán mỗi email mà không có mật khẩu cũng được: agent
-mở cửa sổ Outlook và chờ bạn đăng nhập một lần — phiên nằm lại trong profile nên
+Nhập email, mật khẩu rồi bấm **Lấy mã**. Để trống mật khẩu cũng được: agent mở
+cửa sổ Outlook và chờ bạn đăng nhập một lần — phiên nằm lại trong profile nên
 "một lần" là một lần thật.
 
-## Chạy trên server, mở từ máy khác
+## Triển khai lên server
 
-Một lệnh, hỏi những gì nó cần:
-
-```bash
-./setup.sh
-```
-
-Nó cài phụ thuộc và Chromium, sinh `chay.sh` (file mang token, đã được
-`.gitignore` chặn), rồi **kiểm tới tận chỗ chứng minh được**: gọi ra Internet
-qua proxy và in IP thật mà bên ngoài nhìn thấy. Chạy lại được nhiều lần — nó
-không ghi đè `chay.sh` đã có, vì ghi đè là mất token.
+Cần `git` và [`uv`](https://docs.astral.sh/uv/). Một lần:
 
 ```bash
-./setup.sh --check     # chỉ kiểm cái đang có, không sửa gì
-READER_TOKEN=... READER_PROXY=... ./setup.sh --yes    # không hỏi gì, cho script
+git clone <repo> ~/reader && cd ~/reader
+./setup.sh --service
 ```
 
-Bốn thứ nó bắt được mà chạy tay thì chỉ hiện ra sau, dưới dạng triệu chứng khác:
+`setup.sh` làm hết, theo thứ tự:
+
+1. `uv sync` và cài Chromium kèm thư viện hệ thống (xin `sudo` công khai nếu cần).
+2. Sinh `.env` — hỏi `READER_TOKEN` (bỏ trống là tự sinh) và `READER_PROXY`.
+   File mode 600, `.gitignore` đã chặn. **Không bao giờ ghi đè** `.env` đã có.
+3. Kiểm tới chỗ chứng minh được: sandbox Chromium, gọi ra Internet qua proxy và
+   in IP mà bên ngoài nhìn thấy, rồi mở thử trình duyệt đúng như một lượt thật.
+4. `--service`: cài unit systemd `reader` (tự lên lại sau reboot và khi đổ),
+   khởi động nó, rồi in địa chỉ kèm token để mở từ máy khác.
+
+Không hỏi gì, cho script: `READER_TOKEN=... READER_PROXY=... ./setup.sh --yes --service`.
+
+Hằng ngày:
+
+```bash
+journalctl -u reader -f              # xem log
+sudo systemctl restart reader        # sau khi sửa .env
+./setup.sh --update                  # git pull + cài lại phụ thuộc + khởi động lại
+./setup.sh --check                   # chỉ kiểm, không sửa gì
+```
+
+Mọi cấu hình nằm trong **`.env`** — token, proxy, SMTP, webhook; đủ danh sách
+biến ở `.env.example` và [bảng Cấu hình](#cấu-hình). reader tự đọc file đó lúc
+khởi động, nên `uv run python -m reader`, `--check` và service đọc cùng một chỗ;
+unit systemd không mang bí mật nào. Nhớ mở cổng 5678 ở tường lửa / security group.
+
+> Đang chạy bản cũ bằng `chay.sh` + `nohup`? Chạy `./setup.sh --service`: nó
+> chuyển các biến trong `chay.sh` sang `.env`, dừng tiến trình `nohup` cũ rồi
+> bật service. Kiểm `.env` xong thì `rm chay.sh`.
+
+Những thứ `setup.sh` bắt được mà chạy tay thì chỉ hiện ra sau, dưới dạng triệu
+chứng khác:
 
 | Nó báo | Nghĩa là |
 |---|---|
 | `READER_TOKEN RỖNG` | giao diện mở cho mọi người, mà trang này nhận **mật khẩu hộp thư** |
 | `READER_PROXY còn chứa dấu '<'` | placeholder chưa thay bằng token thật |
-| `407` / `403` / `503` từ proxy | token sai / chưa có mapping / route hỏng — ba chuyện khác nhau, ba cách chữa khác nhau |
-| `không có phản hồi nào` | IP máy này ngoài `allowed_client_cidrs` của gateway, nó đóng kết nối không trả lời |
+| `407` / `403` / `503` từ proxy | sai mật khẩu proxy / bị từ chối đích / proxy không có đường ra |
+| `không có phản hồi` | không tới được proxy, hoặc IP máy này không được phép |
 | `user namespace bị khoá` | Chromium sẽ chạy **không sandbox** — in luôn lệnh sysctl để mở |
 
-Muốn làm tay thì ba lệnh này là đủ:
-
-```bash
-uv sync
-uv run playwright install --with-deps chromium     # server trắng thì cần cả --with-deps
-uv run python -m reader --host 0.0.0.0 --token chuoi-cua-ban
-```
-
-Token là chuỗi **bạn tự đặt**, không có sẵn ở đâu cả. Đặt bằng `--token` như
-trên, hoặc bằng `READER_TOKEN=...` nếu không muốn nó hiện trong `ps` (máy nhiều
-người dùng). Dù đặt cách nào, dòng đầu tiên server in ra có sẵn cả địa chỉ lẫn
-token, chỉ việc copy:
-
-```
-Mở http://0.0.0.0:5678/?token=chuoi-cua-ban
-```
-
-`--host 0.0.0.0` để máy khác gọi được (mặc định chỉ nghe `127.0.0.1`), và nhớ
-mở cổng 5678 ở tường lửa / security group.
+### Token
 
 Trang này nhận **mật khẩu hộp thư** và trả về **mã OTP**, nên mở ra mạng thì
-phải khoá: đặt token, rồi mở `http://<ip>:5678/?token=<token>` **một lần** — token được cất vào cookie, những lần sau mở `http://<ip>:5678/` là đủ.
-Gọi API trực tiếp thì đính header `X-Reader-Token`. Không có token đúng thì mọi
-đường, kể cả trang chủ, trả 401. Chạy không token trên `0.0.0.0` vẫn được nhưng
-log sẽ cảnh báo một dòng — chỉ nên thế khi đã có lớp chặn khác (VPN, tường lửa).
-
-### Lệnh chạy đầy đủ
-
-Gom hết lại một chỗ. Viết thành một file cho khỏi gõ lại mỗi lần, ví dụ
-`chay.sh` ngay trong thư mục dự án (`.gitignore` đã bỏ qua `*.log`, còn
-`chay.sh` thì tự thêm nếu nó chứa mật khẩu):
+phải khoá. Mở `http://<ip>:5678/?token=<token>` **một lần** — token được cất
+vào cookie, những lần sau mở `http://<ip>:5678/` là đủ. Gọi API trực tiếp thì
+đính header `X-Reader-Token`. Không có token đúng thì mọi đường, kể cả trang
+chủ, trả 401. Chạy không token trên `0.0.0.0` vẫn được nhưng log cảnh báo một
+dòng — chỉ nên thế khi đã có lớp chặn khác (VPN, tường lửa).
 
 ```bash
-#!/bin/bash
-cd "$(dirname "$0")"
-
-export READER_TOKEN=mekong          # bỏ dòng này là trang mở cho mọi người
-export READER_BROWSER_CHANNEL=             # để rỗng: dùng Chromium của Playwright
-export READER_PROXY=http://user:pass@host:port    # proxy dân cư, bỏ nếu không có
-
-# Gửi mã về hộp thư của bạn - bỏ cả khối nếu không cần
-export READER_SMTP_HOST=smtp.gmail.com
-export READER_SMTP_USER=toi@gmail.com
-export READER_SMTP_PASSWORD=<mật khẩu ứng dụng 16 ký tự>
-export READER_MAIL_TO=toi@gmail.com
-
-# Bắn mã về hệ thống của bạn - bỏ nếu không cần
-export READER_WEBHOOK=https://cho-cua-ban/hook
-export READER_WEBHOOK_SECRET=chuoi-bi-mat
-
-# "$@": để `./chay.sh --check` hay `./chay.sh --port 8080` truyền được xuống
-exec uv run python -m reader --host 0.0.0.0 "$@"
+curl -s localhost:5678/api/jobs -H "X-Reader-Token: $(grep -oP '^READER_TOKEN=\K\S*' .env)"
 ```
-
-Một lệnh cho việc dùng hằng ngày — chạy nền **và** xem log ngay:
-
-```bash
-cd ~/reader && pkill -f "python -m reader"; sleep 1; nohup ./chay.sh > reader.log 2>&1 & sleep 2; tail -f reader.log
-```
-
-`Ctrl+C` chỉ thoát phần xem log, **reader vẫn chạy** — vì `nohup` đã tách nó
-khỏi terminal. Và `pkill` ở đầu làm lệnh an toàn khi gọi lại: không bao giờ có
-hai tiến trình tranh cổng 5678, thứ gây ra lỗi "Address already in use" mà
-nhìn log reader thì không hiểu vì sao.
-
-Gõ mỗi lần thì dài, nên đặt thành một từ trong `~/.bashrc`:
-
-```bash
-reader-run() {
-    cd ~/reader || return 1
-    pkill -f "python -m reader" 2>/dev/null; sleep 1
-    nohup ./chay.sh > reader.log 2>&1 &
-    sleep 2; tail -f reader.log
-}
-reader-log()  { tail -f ~/reader/reader.log; }
-reader-stop() { pkill -f "python -m reader" && echo "đã dừng"; }
-```
-
-Mấy việc hay phải làm:
-
-```bash
-pgrep -af "python -m reader"     # đang chạy không
-pkill -f "python -m reader"      # dừng
-./chay.sh --check                # thử mở trình duyệt, in lỗi thật nếu hỏng
-curl -s localhost:5678/api/jobs \
-  -H "X-Reader-Token: $(grep -oP '^export READER_TOKEN=\K.*' chay.sh)"   # xem các lượt
-```
-
-`$READER_TOKEN` của shell bạn thường rỗng vì token nằm trong `chay.sh` chứ
-không trong môi trường hiện tại — nên lệnh trên đọc thẳng từ file.
 
 **Khởi động lại là mất hết các lượt đang chạy** (chúng chỉ sống trong bộ nhớ),
-kể cả mã đã lấy được. Mã nào cần giữ thì để `webhook` hoặc mail mang đi ngay
-lúc có, đừng dựa vào tab đang mở.
+kể cả mã đã lấy được. Mã nào cần giữ thì để webhook hoặc mail mang đi ngay lúc
+có, đừng dựa vào tab đang mở.
 
-Muốn nó tự chạy lại sau khi reboot thì dựng một unit systemd
-(`/etc/systemd/system/reader.service`, nhớ `chmod 600` vì nó chứa mật khẩu):
+### Lượt kẹt ở `đang mở trình duyệt`
 
-```ini
-[Unit]
-Description=reader - lấy mã OTP từ Outlook
-After=network-online.target
-
-[Service]
-WorkingDirectory=/duong/dan/reader
-ExecStart=/duong/dan/reader/chay.sh
-Restart=on-failure
-User=<tên người dùng>
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable --now reader
-journalctl -u reader -f
-```
-
-Lượt lấy mã **kẹt ở `đang mở trình duyệt`** nghĩa là kẹt ở đúng bước khởi động
-Chromium, và lỗi thật nằm trong log của luồng nền. Chạy riêng bước đó ra để nó
-hiện thẳng:
+Nghĩa là kẹt ở đúng bước khởi động Chromium, và lỗi thật nằm trong log của luồng
+nền. Chạy riêng bước đó ra để nó hiện thẳng:
 
 ```bash
 uv run python -m reader --check
 ```
 
-Hai thứ hay thiếu nhất trên server: **Google Chrome** (mặc định
-`READER_BROWSER_CHANNEL=chrome` đòi Chrome thật — server thì đặt rỗng để dùng
-Chromium của Playwright) và **thư viện hệ thống** cho Chromium (cài bằng
-`playwright install --with-deps chromium`). `--check` nhận ra cả hai và nói
-thẳng phải làm gì.
-
-Log đi ra stdout/stderr của tiến trình, nên nhớ hứng lại lúc khởi động:
-
-```bash
-nohup uv run python -m reader --host 0.0.0.0 --token chuoi-cua-ban \
-      > reader.log 2>&1 &
-tail -f reader.log                 # systemd thì: journalctl -u <unit> -f
-```
+Hai thứ hay thiếu nhất trên server: **Google Chrome** (trên máy không màn hình
+reader mặc định dùng Chromium của Playwright, nhưng `.env` đặt
+`READER_BROWSER_CHANNEL=chrome` thì sẽ đòi Chrome thật) và **thư viện hệ thống**
+cho Chromium (`sudo .venv/bin/playwright install-deps chromium`). `--check` nhận
+ra cả hai, cùng lỗi proxy, và nói thẳng phải làm gì.
 
 ### Theo dõi log
 
@@ -216,15 +123,15 @@ Lượt không lấy được hay bị chặn ghi ở mức `WARNING` kèm lý d
 các lượt cần xem bằng:
 
 ```bash
-grep -E "WARNING|XONG" reader.log
+journalctl -u reader | grep -E "WARNING|XONG"
 ```
 
 Khi một lượt **đứng hình** và muốn nhìn sâu hơn — từng nhịp poll, số mail đã
 xem, mỗi lần tải lại trang, mỗi lần quét danh sách — bật mức `DEBUG`:
 
 ```bash
-uv run python -m reader --host 0.0.0.0 --verbose     # hoặc -v
-READER_LOG_LEVEL=DEBUG uv run python -m reader --host 0.0.0.0
+echo READER_LOG_LEVEL=DEBUG >> .env && sudo systemctl restart reader
+uv run python -m reader --verbose     # hoặc -v, khi chạy tay
 ```
 
 ```
@@ -235,8 +142,7 @@ quét xong: 2 mail nghi là mail mã, chưa rút được mã
 
 **Mật khẩu và mã OTP không bao giờ vào log** ở bất kỳ mức nào: dòng tổng kết chỉ
 ghi "có mã" cùng nơi tìm thấy (`dòng xem trước` / `nội dung mail`), không ghi con
-số. Email hộp thư thì có xuất hiện, nên `reader.log` vẫn nên giữ kín như mọi file
-khác của dự án.
+số. Email hộp thư thì có xuất hiện, nên log vẫn nên giữ kín.
 
 ### Nhìn được màn hình của agent trên server
 
@@ -261,9 +167,13 @@ với lý do xác thực hai bước.
 Cách chữa: cho trình duyệt đi qua proxy dân cư.
 
 ```bash
-READER_PROXY=http://user:pass@host:port uv run python -m reader --host 0.0.0.0 --token ...
-uv run python -m reader --check        # in ra "qua proxy ..." để chắc là nó có hiệu lực
+# trong .env
+READER_PROXY=http://user:pass@host:port
 ```
+
+`./setup.sh --check` gọi thử ra Internet qua proxy đó và in IP thật bên ngoài
+thấy; `uv run python -m reader --check` in `qua proxy ...` để chắc trình duyệt
+cũng dùng nó.
 
 Nhận cả `socks5://`, và thiếu scheme thì coi là `http://`. Mật khẩu proxy không
 vào log.
@@ -279,8 +189,8 @@ phải sửa code reader, nó chỉ là một proxy HTTP có xác thực:
 # trên máy chạy egw, cấp phát một workspace cho reader:
 ./deploy/provision-client.sh reader       # in ra token, CHỈ HIỆN MỘT LẦN
 
-# trong chay.sh của reader:
-export READER_PROXY=http://reader:<TOKEN>@127.0.0.1:3128
+# trong .env của reader:
+READER_PROXY=http://reader:<TOKEN>@127.0.0.1:3128
 ```
 
 Cổng **3128** (HTTP CONNECT), không phải 1080: Chromium không gửi được
@@ -340,7 +250,8 @@ không nhận được gì. Nó không vào log, không vào file, và không đ
 
 ## Cấu hình
 
-Mọi thứ có mặc định dùng được ngay; đổi bằng biến môi trường:
+Mọi thứ có mặc định dùng được ngay; đổi trong `.env` (hoặc biến môi trường —
+biến môi trường thắng `.env`):
 
 | Biến | Mặc định | Nghĩa |
 |---|---|---|
@@ -350,7 +261,7 @@ Mọi thứ có mặc định dùng được ngay; đổi bằng biến môi tr�
 | `READER_HEADLESS` | theo máy | mặc định `true` khi máy không có màn hình; `true` thì gặp 2FA bạn không còn chỗ nào để xử lý |
 | `READER_PROFILES` | `.profiles` | nơi giữ phiên Outlook, mỗi email một thư mục con |
 | `READER_INBOX_URL` | `https://outlook.live.com/mail/0/` | hộp thư cần mở |
-| `READER_BROWSER_CHANNEL` | `chrome` | rỗng thì dùng Chromium của Playwright |
+| `READER_BROWSER_CHANNEL` | `chrome` nếu có màn hình, rỗng nếu không | rỗng thì dùng Chromium của Playwright |
 | `READER_PROXY` | rỗng | `http://user:pass@host:port` — xem phần dưới, trên server gần như bắt buộc |
 | `READER_WEBHOOK` | rỗng | có mã thì POST JSON về đây |
 | `READER_WEBHOOK_SECRET` | rỗng | đi kèm ở header `X-Reader-Secret` |
@@ -362,6 +273,7 @@ Mọi thứ có mặc định dùng được ngay; đổi bằng biến môi tr�
 | `READER_POLL_SECONDS` | `5` | nhịp đọc lại danh sách mail |
 | `READER_REFRESH_SECONDS` | `120` | nhịp tải lại trang (chỉ là lưới an toàn) |
 | `READER_TIMEOUT_SECONDS` | `180` | hạn cho cả một lượt lấy mã |
+| `READER_LOGIN_TIMEOUT_SECONDS` | `90` | hạn cho riêng bước đăng nhập |
 | `READER_LOG_LEVEL` | `INFO` | `DEBUG` để log chi tiết từng nhịp poll (hoặc cờ `--verbose`) |
 
 ## API
@@ -374,7 +286,7 @@ Cho hệ thống khác gọi sang: `POST /api/code` chạy cả lượt rồi m�
 curl -X POST http://<ip>:5678/api/code \
      -H 'content-type: application/json' \
      -H 'X-Reader-Token: <token>' \
-     -d '{"account": "ten@outlook.com|MatKhau123"}'
+     -d '{"email": "ten@outlook.com", "password": "MatKhau123"}'
 ```
 
 ```json
@@ -391,7 +303,7 @@ HTTP nói thêm chuyện gì đã xảy ra:
 | 200 | có mã, nằm ở `code` |
 | 409 | phải có người làm — 2FA, CAPTCHA, sai mật khẩu; lý do ở `blocked` |
 | 408 | hết giờ mà không thấy mã nào |
-| 400 | chuỗi tài khoản không đọc được |
+| 400 | email không hợp lệ, hoặc `webhook` không phải `http(s)://` |
 | 401 | thiếu hoặc sai token |
 
 Thêm `"wait": 60` để không chờ lâu hơn thế. Hết `wait` mà chưa xong thì trả 408
@@ -407,14 +319,13 @@ Thêm `webhook` để không phải ngồi chờ câu trả lời: có mã là s
 JSON tới URL của bạn.
 
 ```bash
-# mặc định cho mọi lượt, khai lúc chạy server
-READER_WEBHOOK=https://cho-cua-ban/hook \
-READER_WEBHOOK_SECRET=chuoi-bi-mat \
-uv run python -m reader --host 0.0.0.0
+# mặc định cho mọi lượt: trong .env
+READER_WEBHOOK=https://cho-cua-ban/hook
+READER_WEBHOOK_SECRET=chuoi-bi-mat
 
 # hoặc riêng cho một lần gọi (cái này thắng cái trên)
 curl -X POST http://<ip>:5678/api/code -H 'content-type: application/json' \
-     -d '{"account": "ten@outlook.com|MatKhau123", "webhook": "https://cho-khac/hook"}'
+     -d '{"email": "ten@outlook.com", "password": "MatKhau123", "webhook": "https://cho-khac/hook"}'
 ```
 
 Gói tin gửi đi:
@@ -444,12 +355,12 @@ Ba chỗ đáng biết trước:
 **Mặc định TẮT.** Khai đủ máy chủ SMTP và địa chỉ nhận thì mới bật:
 
 ```bash
-READER_SMTP_HOST=smtp.gmail.com \
-READER_SMTP_PORT=587 \
-READER_SMTP_USER=toi@gmail.com \
-READER_SMTP_PASSWORD=<mật khẩu ứng dụng, không phải mật khẩu Gmail> \
-READER_MAIL_TO=toi@gmail.com \
-uv run python -m reader --host 0.0.0.0
+# trong .env, rồi: sudo systemctl restart reader
+READER_SMTP_HOST=smtp.gmail.com
+READER_SMTP_PORT=587
+READER_SMTP_USER=toi@gmail.com
+READER_SMTP_PASSWORD=<mật khẩu ứng dụng, không phải mật khẩu Gmail>
+READER_MAIL_TO=toi@gmail.com
 ```
 
 Thư nhận được có **mã ngay trên tiêu đề** — `483921 - mã OTP của ten@outlook.com`
@@ -461,7 +372,7 @@ Từng lần gọi muốn gửi về một địa chỉ khác thì truyền thê
 
 ```bash
 curl -X POST http://<ip>:5678/api/code -H 'content-type: application/json' \
-     -d '{"account": "ten@outlook.com|MatKhau123", "mail_to": "rieng@vi-du.com"}'
+     -d '{"email": "ten@outlook.com", "password": "MatKhau123", "mail_to": "rieng@vi-du.com"}'
 ```
 
 Cổng `465` thì bọc TLS ngay từ đầu, `587` thì STARTTLS — đoán theo cổng, không
@@ -480,7 +391,7 @@ khi đã bật xác minh hai bước cho tài khoản Google; mật khẩu Gmail
 
 | Đường | Việc |
 |---|---|
-| `POST /api/otp` `{"account": "mail\|pass", "sign_out_after": false}` | tạo một lượt, trả về `id` |
+| `POST /api/otp` `{"email": "...", "password": "...", "sign_out_after": false}` | tạo một lượt, trả về `id` |
 | `GET /api/otp/{id}` | trạng thái: `status`, `detail`, `code`, `error`, `done` |
 | `POST /api/otp/{id}/stop` | dừng lượt đang chạy |
 | `GET /api/jobs` | các lượt gần đây (không chứa mật khẩu) |
@@ -502,9 +413,9 @@ riêng và kênh duy nhất đi ra là bản ghi trạng thái có khoá (`reade
 | `reader/mail_login.py` | máy trạng thái đăng nhập Microsoft (bẫy "không mật khẩu", luật bấm qua thông báo) |
 | `reader/outlook.py` | nhận ra trạng thái trang, quét danh sách mail |
 | `reader/otp_extract.py` | chấm điểm dãy số để chọn đúng mã |
-| `reader/account.py` | tách chuỗi dán vào thành email + mật khẩu |
 | `reader/proxy.py` | đọc chuỗi proxy cho trình duyệt |
-| `setup.sh` | dựng reader trên server: phụ thuộc, `chay.sh`, kiểm đường ra |
+| `reader/config.py` | đọc `.env` và biến môi trường thành `Settings` |
+| `setup.sh` | dựng reader trên server: phụ thuộc, `.env`, kiểm đường ra, systemd |
 | `reader/webhook.py` | bắn mã về URL của bạn |
 | `reader/mailer.py` | gửi mã về hộp thư của bạn qua SMTP |
 
@@ -519,7 +430,7 @@ bị chặn và trả bằng trang mẫu trong `reader/testpages/`, nên luật 
 mọi thứ phụ thuộc URL vẫn đúng như thật. `tests/test_fetch.py` đi hết đường
 thật — trang giới thiệu → cổng đăng nhập → màn hình "không mật khẩu" → mật khẩu
 → "We're updating our terms" → "A quick note about your Microsoft account"
-(trong iframe) → "Stay signed in?" → hộp thư → mã — nên nó mất khoảng hai phút.
+(trong iframe) → "Stay signed in?" → hộp thư → mã — nên cả bộ test mất khoảng ba phút.
 
 ## Điểm yếu đã biết
 

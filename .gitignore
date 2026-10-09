@@ -7,3 +7,7 @@ __pycache__/
 # Token truy cập và log chạy thật - cả hai đều là thứ của một lần triển khai.
 .token
 *.log
+
+# Script chạy của một lần triển khai. README đưa mẫu có READER_TOKEN và
+# READER_PROXY, tức nó mang sẵn hai token - không bao giờ commit.
+chay.sh

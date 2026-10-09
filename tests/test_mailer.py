@@ -132,7 +132,7 @@ def test_co_ma_thi_gui_mail(settings, monkeypatch, smtp):
     hit = Hit("483921", "ngữ cảnh trước", "dòng xem trước", "TikTok mã xác minh")
     with TestClient(_app(cai_dat, monkeypatch, Result(hit=hit))) as client:
         assert client.post("/api/code",
-                           json={"account": "ten@outlook.com|x"}).status_code == 200
+                           json={"email": "ten@outlook.com", "password": "x"}).status_code == 200
     assert "483921" in smtp.cuoi.thu["Subject"]
     assert smtp.cuoi.thu["To"] == "toi@vi-du.com"
 
@@ -143,7 +143,7 @@ def test_khong_co_ma_thi_khong_gui_gi(settings, monkeypatch, smtp):
         mail_to="toi@vi-du.com",
     )
     with TestClient(_app(cai_dat, monkeypatch, Result(error="hết giờ"))) as client:
-        client.post("/api/code", json={"account": "ten@outlook.com|x"})
+        client.post("/api/code", json={"email": "ten@outlook.com", "password": "x"})
     assert smtp.cuoi is None
 
 
@@ -154,7 +154,7 @@ def test_moi_lan_goi_gui_toi_mot_dia_chi_khac_nhau(settings, monkeypatch, smtp):
     )
     hit = Hit("483921", "ngữ cảnh trước", "dòng xem trước", "")
     with TestClient(_app(cai_dat, monkeypatch, Result(hit=hit))) as client:
-        client.post("/api/code", json={"account": "ten@outlook.com|x",
+        client.post("/api/code", json={"email": "ten@outlook.com", "password": "x",
                                        "mail_to": "rieng@vi-du.com"})
     assert smtp.cuoi.thu["To"] == "rieng@vi-du.com"
 
@@ -169,7 +169,7 @@ def test_bam_nut_tren_giao_dien_cung_tu_gui_mail(settings, monkeypatch, smtp):
     hit = Hit("483921", "ngữ cảnh trước", "dòng xem trước", "TikTok mã xác minh")
     with TestClient(_app(cai_dat, monkeypatch, Result(hit=hit))) as client:
         job_id = client.post("/api/otp",
-                             json={"account": "ten@outlook.com|x"}).json()["id"]
+                             json={"email": "ten@outlook.com", "password": "x"}).json()["id"]
         for _ in range(50):                      # chờ luồng nền xong
             if client.get(f"/api/otp/{job_id}").json()["done"]:
                 break

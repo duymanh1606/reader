@@ -45,7 +45,7 @@ def _wait(client, job_id, timeout=5.0):
 
 
 def test_dan_vao_roi_nhan_ma(client):
-    res = client.post("/api/otp", json={"account": "ten@outlook.com|MatKhau123"})
+    res = client.post("/api/otp", json={"email": "ten@outlook.com", "password": "MatKhau123"})
     assert res.status_code == 200
     job = _wait(client, res.json()["id"])
     assert job["code"] == "483921"
@@ -61,14 +61,14 @@ def test_trang_chu_mo_duoc(client):
 
 
 def test_dan_sai_thi_bao_ngay_khong_mo_trinh_duyet(client):
-    res = client.post("/api/otp", json={"account": "khong-co-email"})
+    res = client.post("/api/otp", json={"email": "khong-co-email", "password": "x"})
     assert res.status_code == 400
     assert "email" in res.json()["detail"]
     assert client.goi == []
 
 
 def test_mat_khau_khong_lot_ra_api(client):
-    res = client.post("/api/otp", json={"account": "ten@outlook.com|MatKhau123"})
+    res = client.post("/api/otp", json={"email": "ten@outlook.com", "password": "MatKhau123"})
     job = _wait(client, res.json()["id"])
     assert "MatKhau123" not in res.text
     assert "MatKhau123" not in client.get("/api/jobs").text
@@ -92,7 +92,7 @@ def test_cung_email_khong_mo_hai_trinh_duyet(settings, monkeypatch):
 
     monkeypatch.setattr("reader.jobs.run", fake_run)
     with TestClient(create_app(settings)) as client:
-        body = {"account": "ten@outlook.com|MatKhau123"}
+        body = {"email": "ten@outlook.com", "password": "MatKhau123"}
         mot = client.post("/api/otp", json=body).json()
         hai = client.post("/api/otp", json=body).json()
         assert mot["id"] == hai["id"]
@@ -113,7 +113,7 @@ def test_bam_dung_thi_lenh_di_toi_luong_lam_viec(settings, monkeypatch):
 
     monkeypatch.setattr("reader.jobs.run", fake_run)
     with TestClient(create_app(settings)) as client:
-        job_id = client.post("/api/otp", json={"account": "ten@outlook.com|x"}).json()["id"]
+        job_id = client.post("/api/otp", json={"email": "ten@outlook.com", "password": "x"}).json()["id"]
         assert client.post(f"/api/otp/{job_id}/stop").status_code == 200
         job = _wait(client, job_id)
         assert job["error"] == "bạn đã dừng"
@@ -126,7 +126,7 @@ def test_khong_thay_ma_thi_noi_ro_la_het_gio(settings, monkeypatch):
     monkeypatch.setattr("reader.jobs.run",
                         lambda *a, **k: Result())
     with TestClient(create_app(settings)) as client:
-        job_id = client.post("/api/otp", json={"account": "ten@outlook.com|x"}).json()["id"]
+        job_id = client.post("/api/otp", json={"email": "ten@outlook.com", "password": "x"}).json()["id"]
         job = _wait(client, job_id)
         assert job["code"] is None
         assert "không thấy mã nào" in job["error"]
@@ -135,7 +135,7 @@ def test_khong_thay_ma_thi_noi_ro_la_het_gio(settings, monkeypatch):
 # -- một đường, một lần gọi ------------------------------------------------
 def test_mot_lan_goi_la_co_ma(client):
     """Hệ thống khác gọi sang chỉ muốn đúng cái mã, không muốn hỏi lại mỗi giây."""
-    res = client.post("/api/code", json={"account": "ten@outlook.com|MatKhau123"})
+    res = client.post("/api/code", json={"email": "ten@outlook.com", "password": "MatKhau123"})
     assert res.status_code == 200
     data = res.json()
     assert data["ok"] is True
@@ -151,7 +151,7 @@ def test_bi_chan_boi_2fa_thi_tra_409_kem_ly_do(settings, monkeypatch):
 
     monkeypatch.setattr("reader.jobs.run", fake_run)
     with TestClient(create_app(settings)) as client:
-        res = client.post("/api/code", json={"account": "ten@outlook.com|x"})
+        res = client.post("/api/code", json={"email": "ten@outlook.com", "password": "x"})
         assert res.status_code == 409
         data = res.json()
         assert data["ok"] is False
@@ -162,7 +162,7 @@ def test_bi_chan_boi_2fa_thi_tra_409_kem_ly_do(settings, monkeypatch):
 def test_khong_thay_ma_thi_tra_408(settings, monkeypatch):
     monkeypatch.setattr("reader.jobs.run", lambda *a, **k: Result())
     with TestClient(create_app(settings)) as client:
-        res = client.post("/api/code", json={"account": "ten@outlook.com|x"})
+        res = client.post("/api/code", json={"email": "ten@outlook.com", "password": "x"})
         assert res.status_code == 408
         assert res.json()["ok"] is False
 
@@ -178,7 +178,7 @@ def test_cho_qua_han_thi_tra_408_nhung_luot_van_chay_tiep(settings, monkeypatch)
     monkeypatch.setattr("reader.jobs.run", fake_run)
     with TestClient(create_app(settings)) as client:
         res = client.post("/api/code",
-                          json={"account": "ten@outlook.com|x", "wait": 0.3})
+                          json={"email": "ten@outlook.com", "password": "x", "wait": 0.3})
         assert res.status_code == 408
         assert res.json()["done"] is False
         job_id = res.json()["id"]
@@ -187,14 +187,14 @@ def test_cho_qua_han_thi_tra_408_nhung_luot_van_chay_tiep(settings, monkeypatch)
 
 
 def test_dan_sai_thi_khong_mo_trinh_duyet(client):
-    res = client.post("/api/code", json={"account": "khong-co-email"})
+    res = client.post("/api/code", json={"email": "khong-co-email", "password": "x"})
     assert res.status_code == 400
     assert client.goi == []
 
 
 # -- ảnh màn hình ----------------------------------------------------------
 def test_chua_co_anh_thi_404(client):
-    job_id = client.post("/api/otp", json={"account": "ten@outlook.com|x"}).json()["id"]
+    job_id = client.post("/api/otp", json={"email": "ten@outlook.com", "password": "x"}).json()["id"]
     _wait(client, job_id)
     assert client.get(f"/api/otp/{job_id}/screenshot").status_code == 404
 
@@ -211,7 +211,7 @@ def test_lay_duoc_anh_man_hinh_cua_luot(settings, monkeypatch):
 
     monkeypatch.setattr("reader.jobs.run", fake_run)
     with TestClient(create_app(settings)) as client:
-        job_id = client.post("/api/otp", json={"account": "ten@outlook.com|x"}).json()["id"]
+        job_id = client.post("/api/otp", json={"email": "ten@outlook.com", "password": "x"}).json()["id"]
         job = _wait(client, job_id)
         assert job["shot_at"] is not None
         assert job["page_url"] == "https://login.live.com/login.srf"
@@ -231,7 +231,7 @@ def test_anh_khong_di_kem_json_trang_thai(settings, monkeypatch):
 
     monkeypatch.setattr("reader.jobs.run", fake_run)
     with TestClient(create_app(settings)) as client:
-        job_id = client.post("/api/otp", json={"account": "ten@outlook.com|x"}).json()["id"]
+        job_id = client.post("/api/otp", json={"email": "ten@outlook.com", "password": "x"}).json()["id"]
         res = client.get(f"/api/otp/{job_id}")
         assert len(res.content) < 1000
         assert "shot" not in res.json()
@@ -263,7 +263,7 @@ def khoa(settings, monkeypatch):
 ])
 def test_khong_token_thi_khong_duong_nao_di_duoc(khoa, duong, cach):
     goi = getattr(khoa, cach)
-    res = goi(duong, json={"account": "ten@outlook.com|x"}) if cach == "post" else goi(duong)
+    res = goi(duong, json={"email": "ten@outlook.com", "password": "x"}) if cach == "post" else goi(duong)
     assert res.status_code == 401
 
 

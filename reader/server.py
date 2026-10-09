@@ -18,7 +18,6 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from reader.account import BadAccount, parse
 from reader.config import Settings
 from reader.jobs import Jobs
 from reader.webhook import BadWebhook, check as check_webhook
@@ -32,9 +31,10 @@ COOKIE = "reader_token"
 
 
 class CodeRequest(BaseModel):
-    """Một đường, một lần gọi: dán tài khoản, chờ, nhận mã."""
+    """Một đường, một lần gọi: gửi email và mật khẩu, chờ, nhận mã."""
 
-    account: str
+    email: str
+    password: str
     sign_out_after: bool = False
     # Có mã thì POST về đây. Không truyền thì dùng READER_WEBHOOK của server.
     webhook: str | None = None
@@ -46,29 +46,30 @@ class CodeRequest(BaseModel):
 
 
 class StartRequest(BaseModel):
-    # Một dòng dán vào: "mail@outlook.com|matkhau". Không tách sẵn hai ô trên
-    # giao diện vì thứ người ta có trong tay luôn là một dòng như thế.
-    account: str
+    email: str
+    password: str
     sign_out_after: bool = False
     webhook: str | None = None
     mail_to: str | None = None
 
 
-def _account_and_webhook(body) -> tuple:
-    """Đọc hai thứ người gọi đưa vào, báo 400 ngay nếu hỏng.
+def _validate_and_webhook(body) -> tuple:
+    """Kiểm email và webhook, báo 400 ngay nếu hỏng.
 
     Kiểm TRƯỚC khi dựng lượt: dựng xong mới phát hiện webhook hỏng là đã mở
     một trình duyệt và đăng nhập một hộp thư cho một lần gọi sai.
     """
-    try:
-        account = parse(body.account)
-    except BadAccount as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    email = (body.email or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(
+            status_code=400,
+            detail="không thấy địa chỉ email hợp lệ",
+        )
     try:
         webhook = check_webhook(body.webhook or "")
     except BadWebhook as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return account, webhook
+    return email, body.password, webhook
 
 
 def _token_from(request: Request) -> str:
@@ -116,8 +117,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/otp", dependencies=need_token)
     def start(body: StartRequest) -> JSONResponse:
-        account, webhook = _account_and_webhook(body)
-        job = jobs.start(account.email, account.password, body.sign_out_after,
+        email, password, webhook = _validate_and_webhook(body)
+        job = jobs.start(email, password, body.sign_out_after,
                          webhook, (body.mail_to or "").strip())
         return JSONResponse(job.as_dict())
 
@@ -134,8 +135,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
           200 có mã · 408 hết giờ mà chưa thấy · 409 phải có người làm (2FA,
           CAPTCHA, sai mật khẩu) · 400 chuỗi tài khoản không đọc được.
         """
-        account, webhook = _account_and_webhook(body)
-        job = jobs.start(account.email, account.password, body.sign_out_after,
+        email, password, webhook = _validate_and_webhook(body)
+        job = jobs.start(email, password, body.sign_out_after,
                          webhook, (body.mail_to or "").strip())
         han = settings.timeout_seconds + 15      # +15: còn phần mở/đóng trình duyệt
         jobs.wait(job.id, min(body.wait or han, han))

@@ -28,12 +28,12 @@
     padding: 18px; margin-bottom: 16px;
   }
   label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-  input[type=text] {
+  input[type=text], input[type=email], input[type=password] {
     width: 100%; padding: 11px 12px; font: inherit; font-family: ui-monospace, monospace;
     color: var(--text); background: var(--bg);
     border: 1px solid var(--line); border-radius: 8px;
   }
-  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input[type=text]:focus, input[type=email]:focus, input[type=password]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .row { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
   button {
     font: inherit; padding: 10px 16px; border-radius: 8px; cursor: pointer;
@@ -73,12 +73,15 @@
 <body>
 <main>
   <h1>Lấy mã OTP từ Outlook</h1>
-  <p class="sub">Dán <code>email|mật khẩu</code>. Agent tự đăng nhập hộp thư, đọc mã gần nhất rồi trả về đây.</p>
+  <p class="sub">Nhập email và mật khẩu Outlook. Agent tự đăng nhập hộp thư, đọc mã gần nhất rồi trả về đây.</p>
 
   <form class="card" id="form">
-    <label for="account">Tài khoản Outlook</label>
-    <input id="account" name="account" type="text" autocomplete="off" spellcheck="false"
-           placeholder="ten@outlook.com|MatKhau123">
+    <label for="email">Email Outlook</label>
+    <input id="email" name="email" type="email" autocomplete="off" spellcheck="false"
+           placeholder="ten@outlook.com">
+    <label for="password" style="margin-top:12px">Mật khẩu</label>
+    <input id="password" name="password" type="password" autocomplete="off"
+           placeholder="MatKhau123">
     <div class="row">
       <button class="primary" id="go" type="submit">Lấy mã</button>
       <button id="stop" type="button" class="hide">Dừng</button>
@@ -196,7 +199,7 @@ $("form").addEventListener("submit", async (e) => {
   show($("shotbox"), false);
   lastShot = null;
   $("go").disabled = true;
-  const body = { account: $("account").value, sign_out_after: $("signout").checked };
+  const body = { email: $("email").value, password: $("password").value, sign_out_after: $("signout").checked };
   const res = await fetch("/api/otp", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

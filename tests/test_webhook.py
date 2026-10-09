@@ -93,7 +93,7 @@ def _app(settings, monkeypatch, result: Result):
 def test_co_ma_thi_ban_ve_webhook_cua_lan_goi(settings, monkeypatch, may_chu):
     hit = Hit("483921", "ngữ cảnh trước", "dòng xem trước", "TikTok mã xác minh")
     with _app(settings, monkeypatch, Result(hit=hit)) as client:
-        res = client.post("/api/code", json={"account": "ten@outlook.com|x",
+        res = client.post("/api/code", json={"email": "ten@outlook.com", "password": "x",
                                              "webhook": may_chu.url})
         assert res.status_code == 200
     goi = may_chu.nhan[0]["body"]
@@ -112,7 +112,7 @@ def test_khong_truyen_thi_dung_webhook_mac_dinh_cua_server(settings, monkeypatch
     hit = Hit("483921", "ngữ cảnh trước", "dòng xem trước", "")
     monkeypatch.setattr("reader.jobs.run", lambda *a, **k: Result(hit=hit))
     with TestClient(create_app(cai_dat)) as client:
-        client.post("/api/code", json={"account": "ten@outlook.com|x"})
+        client.post("/api/code", json={"email": "ten@outlook.com", "password": "x"})
     assert may_chu.nhan[0]["body"]["code"] == "483921"
     assert may_chu.nhan[0]["secret"] == "bi-mat"
 
@@ -121,7 +121,7 @@ def test_khong_co_ma_thi_khong_ban_gi_ca(settings, monkeypatch, may_chu):
     """Webhook là để nhận MÃ. Bắn cả những lượt hỏng là biến nó thành cái
     chuông kêu suốt ngày mà chẳng ai còn nhìn."""
     with _app(settings, monkeypatch, Result(error="cần bạn đăng nhập")) as client:
-        client.post("/api/code", json={"account": "ten@outlook.com|x",
+        client.post("/api/code", json={"email": "ten@outlook.com", "password": "x",
                                        "webhook": may_chu.url})
     assert may_chu.nhan == []
 
@@ -131,7 +131,7 @@ def test_webhook_hong_thi_bao_400_truoc_khi_mo_trinh_duyet(settings, monkeypatch
     monkeypatch.setattr("reader.jobs.run",
                         lambda *a, **k: goi.append(1) or Result())
     with TestClient(create_app(settings)) as client:
-        res = client.post("/api/code", json={"account": "ten@outlook.com|x",
+        res = client.post("/api/code", json={"email": "ten@outlook.com", "password": "x",
                                              "webhook": "file:///etc/passwd"})
         assert res.status_code == 400
         assert goi == []
@@ -141,7 +141,7 @@ def test_url_webhook_khong_lot_ra_api(settings, monkeypatch, may_chu):
     """Query string của webhook thường mang sẵn một cái khoá."""
     hit = Hit("483921", "ngữ cảnh trước", "dòng xem trước", "")
     with _app(settings, monkeypatch, Result(hit=hit)) as client:
-        res = client.post("/api/code", json={"account": "ten@outlook.com|x",
+        res = client.post("/api/code", json={"email": "ten@outlook.com", "password": "x",
                                              "webhook": may_chu.url + "?key=bi-mat"})
         assert "bi-mat" not in res.text
         assert "bi-mat" not in client.get("/api/jobs").text

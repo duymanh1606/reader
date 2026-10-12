@@ -32,8 +32,10 @@ COOKIE = "reader_token"
 
 
 class StartRequest(BaseModel):
+    # Nhận cả một dòng dán `email|matkhau` ngay trong `email` (để trống
+    # `password`) - xem `split_account`.
     email: str
-    password: str
+    password: str = ""
     sign_out_after: bool = False
     # Có mã thì POST về đây. Không truyền thì dùng READER_WEBHOOK của server.
     webhook: str | None = None
@@ -49,23 +51,39 @@ class CodeRequest(StartRequest):
     wait: float | None = None
 
 
+def split_account(email: str, password: str = "") -> tuple[str, str]:
+    """`email|matkhau` -> (email, matkhau). Cắt ở dấu `|` ĐẦU TIÊN.
+
+    Email không chứa được `|`, còn mật khẩu thì có thể - nên phần sau dấu đầu
+    tiên là mật khẩu nguyên vẹn. Có `password` riêng thì nó thắng, và khi đó
+    `email` không bị cắt.
+    """
+    email = (email or "").strip()
+    password = password or ""
+    if not password and "|" in email:
+        email, password = email.split("|", 1)
+        # Dòng dán từ danh sách hay dính dấu cách/xuống dòng ở cuối.
+        password = password.strip()
+    return email.strip().lower(), password
+
+
 def _start(jobs: Jobs, body: StartRequest) -> Job:
     """Kiểm email và webhook, báo 400 ngay nếu hỏng, rồi mới dựng lượt.
 
     Kiểm TRƯỚC khi dựng lượt: dựng xong mới phát hiện webhook hỏng là đã mở
     một trình duyệt và đăng nhập một hộp thư cho một lần gọi sai.
     """
-    email = (body.email or "").strip().lower()
+    email, password = split_account(body.email, body.password)
     if not email or "@" not in email:
         raise HTTPException(
             status_code=400,
-            detail="không thấy địa chỉ email hợp lệ",
+            detail="không thấy địa chỉ email hợp lệ - dán dạng email|matkhau",
         )
     try:
         webhook = check_webhook(body.webhook or "")
     except BadWebhook as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return jobs.start(email, body.password, body.sign_out_after,
+    return jobs.start(email, password, body.sign_out_after,
                       webhook, (body.mail_to or "").strip())
 
 

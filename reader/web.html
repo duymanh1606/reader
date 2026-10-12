@@ -73,15 +73,15 @@
 <body>
 <main>
   <h1>Lấy mã OTP từ Outlook</h1>
-  <p class="sub">Nhập email và mật khẩu Outlook. Agent tự đăng nhập hộp thư, đọc mã gần nhất rồi trả về đây.</p>
+  <p class="sub">Dán tài khoản Outlook dạng <code>email|matkhau</code>. Agent tự đăng nhập hộp thư, đọc mã gần nhất rồi trả về đây.</p>
 
   <form class="card" id="form">
-    <label for="email">Email Outlook</label>
-    <input id="email" name="email" type="email" autocomplete="off" spellcheck="false"
-           placeholder="ten@outlook.com">
-    <label for="password" style="margin-top:12px">Mật khẩu</label>
-    <input id="password" name="password" type="password" autocomplete="off"
-           placeholder="MatKhau123">
+    <label for="account">Tài khoản Outlook, dạng email|matkhau</label>
+    <input id="account" name="account" type="password" autocomplete="off" spellcheck="false"
+           placeholder="ten@outlook.com|MatKhau123">
+    <label class="check" style="margin-top:8px">
+      <input type="checkbox" id="reveal"> hiện chữ
+    </label>
     <div class="row">
       <button class="primary" id="go" type="submit">Lấy mã</button>
       <button id="stop" type="button" class="hide">Dừng</button>
@@ -199,7 +199,8 @@ $("form").addEventListener("submit", async (e) => {
   show($("shotbox"), false);
   lastShot = null;
   $("go").disabled = true;
-  const body = { email: $("email").value, password: $("password").value, sign_out_after: $("signout").checked };
+  // Server tự tách `email|matkhau` (reader/server.py: split_account).
+  const body = { email: $("account").value, sign_out_after: $("signout").checked };
   const res = await fetch("/api/otp", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -213,6 +214,10 @@ $("form").addEventListener("submit", async (e) => {
   render(data);
   timer = setInterval(poll, 1000);
   poll();
+});
+
+$("reveal").addEventListener("change", () => {
+  $("account").type = $("reveal").checked ? "text" : "password";
 });
 
 $("stop").addEventListener("click", async () => {

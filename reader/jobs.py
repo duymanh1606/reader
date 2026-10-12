@@ -21,6 +21,7 @@ from reader import mailer as mailer_mo
 from reader import webhook as webhook_mo
 from reader.config import Settings
 from reader.fetch import Result, run
+from reader.rotate import Rotator, proxy_dead
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ class Jobs:
 
     def __init__(self, settings: Settings):
         self.settings = settings
+        self.rotator = Rotator(settings.proxy_rotate_cmd, settings.proxy_url)
         self._lock = threading.Lock()
         self._jobs: dict[str, Job] = {}
 
@@ -185,13 +187,29 @@ class Jobs:
                 job.shot_at = time.time()
                 job.page_url = url
 
-        try:
-            result = run(job.email, password, self.settings, report,
-                         should_stop=job._stop.is_set,
-                         sign_out_after=sign_out_after, snap=snap)
-        except Exception as exc:                  # pragma: no cover - lưới cuối
-            logger.exception("lượt %s đổ", job.id)
-            result = Result(error=f"lỗi: {exc}")
+        def attempt() -> Result:
+            try:
+                return run(job.email, password, self.settings, report,
+                           should_stop=job._stop.is_set,
+                           sign_out_after=sign_out_after, snap=snap)
+            except Exception as exc:              # pragma: no cover - lưới cuối
+                logger.exception("lượt %s đổ", job.id)
+                return Result(error=f"lỗi: {exc}")
+
+        result = attempt()
+        # IP dân cư sau proxy chết giữa chừng: đổi IP rồi chạy lại MỘT lần.
+        # Một lần thôi - IP mới mà cũng chết ngay thì là chuyện khác, để người xem.
+        if (proxy_dead(result.error) and self.rotator.enabled
+                and not job._stop.is_set()):
+            failed_at = time.monotonic()
+            report("đang đổi IP proxy", "IP dân cư cũ đã offline")
+            ip = self.rotator.rotate(failed_at)
+            if ip is None:
+                result = Result(error=f"{result.error}\n-> đã thử đổi IP proxy "
+                                      "nhưng không được, xem log của reader")
+            else:
+                report("đã đổi IP proxy", f"đi ra bằng {ip}" if ip else "")
+                result = attempt()
         self._finish(job, result)
 
     def _finish(self, job: Job, result: Result) -> None:

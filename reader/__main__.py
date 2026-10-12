@@ -73,6 +73,12 @@ def main() -> None:
         settings.headless, logging.getLevelName(level),
     )
 
+    if settings.proxy_rotate_cmd and settings.proxy_url:
+        logger.info("IP proxy chết thì tự đổi bằng: %s", settings.proxy_rotate_cmd)
+    elif settings.proxy_rotate_cmd:
+        logger.warning("có READER_PROXY_ROTATE mà không có READER_PROXY - "
+                       "không đổi IP được")
+
     if settings.headless and not has_display():
         logger.info("máy không có màn hình nên chạy headless - gặp 2FA hay "
                     "CAPTCHA là tắc, không có cửa sổ nào cho người xử lý")

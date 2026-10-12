@@ -95,6 +95,9 @@ class Settings:
     # Proxy cho trình duyệt, dạng http://user:pass@host:port. Xem reader/proxy.py:
     # IP trung tâm dữ liệu là lý do hay gặp nhất khiến Microsoft hỏi 2FA.
     proxy_url: str = field(default="", repr=False)
+    # Lệnh gán IP mới vào proxy khi IP dân cư đứng sau nó chết, ví dụ
+    # "9proxy proxy -c VN -p 60000". Rỗng là tắt. Xem reader/rotate.py.
+    proxy_rotate_cmd: str = ""
     # Có mã thì POST về đây. Mỗi lần gọi API truyền `webhook` riêng thì cái đó
     # thắng; không truyền thì dùng cái này.
     # repr=False cho mấy giá trị bí mật: `Settings` bị in ra trong log lỗi và
@@ -134,6 +137,7 @@ class Settings:
             host=os.getenv("READER_HOST", cls.host).strip() or cls.host,
             port=_int("READER_PORT", cls.port),
             proxy_url=os.getenv("READER_PROXY", cls.proxy_url).strip(),
+            proxy_rotate_cmd=os.getenv("READER_PROXY_ROTATE", cls.proxy_rotate_cmd).strip(),
             webhook_url=os.getenv("READER_WEBHOOK", cls.webhook_url).strip(),
             webhook_secret=os.getenv("READER_WEBHOOK_SECRET", cls.webhook_secret).strip(),
             smtp_host=os.getenv("READER_SMTP_HOST", cls.smtp_host).strip(),

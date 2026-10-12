@@ -234,7 +234,13 @@ else
         case "$code" in
             407) bad "407 - sai user/mật khẩu proxy, hoặc gói proxy chỉ xác thực bằng whitelist IP (egw: token sai/đã revoke)" ;;
             403) bad "403 - proxy từ chối: IP máy này chưa nằm trong whitelist, hoặc proxy chặn đích (egw: chưa có mapping workspace->route)" ;;
-            502|503) bad "$code - proxy không có đường ra: IP dân cư đã offline/hết hạn, đổi IP khác (egw: route UNHEALTHY)" ;;
+            502|503) bad "$code - proxy không có đường ra: IP dân cư đã offline/hết hạn, đổi IP khác (egw: route UNHEALTHY)"
+                rot=$(envval READER_PROXY_ROTATE)
+                if [ -n "$rot" ]; then
+                    note "READER_PROXY_ROTATE có khai - reader tự đổi ở lượt tới; đổi ngay bằng tay: $rot"
+                else
+                    note "để reader tự đổi IP: thêm vào .env, ví dụ READER_PROXY_ROTATE=9proxy proxy -c VN -p 60000"
+                fi ;;
             000|"") bad "không có phản hồi - không tới được proxy, hoặc IP máy này không được phép (whitelist / egw: allowed_client_cidrs)" ;;
             *)   bad "proxy trả $code" ;;
         esac

@@ -1,6 +1,6 @@
 # reader
 
-Nhập email và mật khẩu của một hộp thư Outlook trên giao diện web; agent tự mở
+Dán `email|matkhau` của một hộp thư Outlook trên giao diện web; agent tự mở
 trình duyệt, đăng nhập hộp thư đó, đọc **mã OTP gần nhất** rồi trả mã về giao
 diện (và, nếu muốn, bắn về webhook hoặc gửi mail cho bạn).
 
@@ -16,7 +16,8 @@ uv run playwright install chromium      # chỉ lần đầu
 uv run python -m reader                 # rồi mở http://127.0.0.1:5678
 ```
 
-Nhập email, mật khẩu rồi bấm **Lấy mã**. Để trống mật khẩu cũng được: agent mở
+Dán tài khoản dạng `email|matkhau` rồi bấm **Lấy mã** (cắt ở dấu `|` đầu tiên,
+nên mật khẩu có `|` vẫn nguyên). Chỉ dán email cũng được: agent mở
 cửa sổ Outlook và chờ bạn đăng nhập một lần — phiên nằm lại trong profile nên
 "một lần" là một lần thật.
 
@@ -181,17 +182,37 @@ user/pass** — Chromium không gửi được chúng cho SOCKS, nên reader t�
 thay vì để mọi trang đổ `ERR_PROXY_CONNECTION_FAILED`. Mật khẩu proxy không vào
 log.
 
-Với proxy mua sẵn (9proxy và tương tự), trỏ thẳng reader vào nó — không cần
-trung gian nào:
+Với **9proxy** (gói theo IP), chạy client Linux của họ ngay trên server - nó mở
+cổng proxy ở `127.0.0.1`, reader trỏ vào đó, không cần máy tính nào bật:
 
-- Lấy thông tin proxy **dùng từ xa** (host public, port, user/pass), loại
-  **HTTP**. Địa chỉ kiểu `192.168.x.x:60000` là cổng do app trên máy tính của
-  bạn mở ra — server ngoài Internet không gọi tới được.
-- Gói chỉ xác thực bằng IP: thêm IP public của server vào whitelist, rồi bỏ
-  `user:pass@` khỏi `READER_PROXY`.
-- Chọn IP **cố định** (sticky), cùng một vùng: mỗi lượt một IP khác, nhất là
-  khác nước, thì Microsoft càng nghi.
-- Sửa `.env` xong: `sudo systemctl restart reader && ./setup.sh --check`.
+```bash
+wget https://static.9proxy-cdn.net/download/latest/linux/9proxy-linux-debian-amd64.deb
+sudo apt install ./9proxy-linux-debian-amd64.deb
+sudo systemctl enable --now 9proxyd
+9proxy auth -s                      # đăng nhập tài khoản 9proxy
+9proxy proxy -c VN -p 60000         # gán một IP Việt Nam vào cổng 60000
+
+# trong .env
+READER_PROXY=http://127.0.0.1:60000
+READER_PROXY_ROTATE=9proxy proxy -c VN -p 60000
+```
+
+Cổng `192.168.x.x:60000` mà app 9proxy trên máy tính hiện ra thì server không
+gọi tới được - đó là cổng trong mạng nhà bạn.
+
+**IP dân cư chết bất chợt** (máy của người thật, tắt là mất): proxy vẫn nhận
+kết nối nhưng không ra được Internet - Chromium báo
+`ERR_TUNNEL_CONNECTION_FAILED`, `./setup.sh --check` báo `502`. Có
+`READER_PROXY_ROTATE` thì reader tự chạy lệnh đó lấy IP mới, kiểm IP mới ra
+được Internet, rồi chạy lại lượt **một lần**. Năm lượt cùng đổ vì một IP chết
+thì chỉ đổi một lần. Mỗi lần đổi là hộp thư thấy một chỗ đăng nhập mới, nên lượt
+ngay sau đó dễ bị hỏi xác minh hơn - log ghi `proxy: đã đổi IP` để bạn biết vì
+sao. Lệnh chạy dưới user của service, nên `9proxy auth` phải làm bằng chính user
+đó.
+
+Proxy khác (có host/port/user:pass dùng từ xa): `READER_PROXY=http://user:pass@host:port`;
+gói chỉ xác thực bằng IP thì whitelist IP server và bỏ `user:pass@`. Sửa `.env`
+xong: `sudo systemctl restart reader && ./setup.sh --check`.
 
 ### Đi ra bằng một IP cố định của riêng bạn (egress-ip-gateway)
 
@@ -278,6 +299,7 @@ biến môi trường thắng `.env`):
 | `READER_INBOX_URL` | `https://outlook.live.com/mail/0/` | hộp thư cần mở |
 | `READER_BROWSER_CHANNEL` | `chrome` nếu có màn hình, rỗng nếu không | rỗng thì dùng Chromium của Playwright |
 | `READER_PROXY` | rỗng | `http://user:pass@host:port` — xem phần dưới, trên server gần như bắt buộc |
+| `READER_PROXY_ROTATE` | rỗng | lệnh lấy IP mới khi IP sau proxy chết, ví dụ `9proxy proxy -c VN -p 60000` |
 | `READER_WEBHOOK` | rỗng | có mã thì POST JSON về đây |
 | `READER_WEBHOOK_SECRET` | rỗng | đi kèm ở header `X-Reader-Secret` |
 | `READER_SMTP_HOST` | rỗng | khai vào là bật gửi mail báo mã |
@@ -406,7 +428,7 @@ khi đã bật xác minh hai bước cho tài khoản Google; mật khẩu Gmail
 
 | Đường | Việc |
 |---|---|
-| `POST /api/otp` `{"email": "...", "password": "...", "sign_out_after": false}` | tạo một lượt, trả về `id` |
+| `POST /api/otp` `{"email": "...", "password": "...", "sign_out_after": false}` | tạo một lượt, trả về `id`; `email` nhận cả `"email\|matkhau"` khi bỏ `password` |
 | `GET /api/otp/{id}` | trạng thái: `status`, `detail`, `code`, `error`, `done` |
 | `POST /api/otp/{id}/stop` | dừng lượt đang chạy |
 | `GET /api/jobs` | các lượt gần đây (không chứa mật khẩu) |

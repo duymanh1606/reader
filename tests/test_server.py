@@ -287,3 +287,31 @@ def test_mo_trang_bang_query_roi_cookie_lo_phan_con_lai(khoa):
 
 def test_khong_dat_token_thi_van_mo_duoc_nhu_cu(client):
     assert client.get("/api/jobs").status_code == 200
+
+
+def test_dan_email_gach_dung_mat_khau(client):
+    """Form web gửi nguyên dòng `email|matkhau` trong `email`."""
+    res = client.post("/api/otp", json={"email": " Ten@Outlook.com|MatKhau|123 \n"})
+    assert res.status_code == 200
+    _wait(client, res.json()["id"])
+    assert client.goi[0]["email"] == "ten@outlook.com"
+    # Cắt ở dấu `|` đầu tiên: mật khẩu chứa `|` vẫn nguyên vẹn.
+    assert client.goi[0]["password"] == "MatKhau|123"
+
+
+def test_chi_dan_email_van_chay(client):
+    """Không có mật khẩu là hợp lệ: phiên đăng nhập nằm sẵn trong profile."""
+    res = client.post("/api/otp", json={"email": "ten@outlook.com"})
+    assert res.status_code == 200
+    _wait(client, res.json()["id"])
+    assert client.goi[0]["password"] == ""
+
+
+def test_tach_tai_khoan():
+    from reader.server import split_account
+
+    assert split_account("a@b.com|p") == ("a@b.com", "p")
+    assert split_account("a@b.com|p|q") == ("a@b.com", "p|q")
+    # Có `password` riêng thì nó thắng; mật khẩu gửi riêng giữ nguyên dấu cách.
+    assert split_account("a@b.com", " p ") == ("a@b.com", " p ")
+    assert split_account("a@b.com") == ("a@b.com", "")

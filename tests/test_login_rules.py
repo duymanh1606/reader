@@ -114,3 +114,29 @@ def test_khong_go_gi_tren_ten_mien_la(browser):
         assert page.input_value("input[name='passwd']") == ""
     finally:
         page.close()
+
+
+def test_mat_khau_bi_tu_choi_thi_khong_go_mai(screen):
+    """Microsoft từ chối mà vẫn hiện ô mật khẩu: trước đây agent gõ lại cứ
+    hai nhịp một lần tới hết 90s - đúng cách làm tài khoản bị khoá. Giờ gõ
+    tối đa MAX_PASSWORD_TRIES lần rồi dừng, kèm lý do."""
+    from reader.mail_login import MAX_PASSWORD_TRIES, MailLoginBlocked
+
+    page = screen("<form name='f1' onsubmit='return false'>"
+                  "<input name='passwd' type='password'>"
+                  "<input id='idSIButton9' type='submit' onclick='return false'>"
+                  "</form>")
+    session = _Login(page, EMAIL, PASSWORD)
+    with pytest.raises(MailLoginBlocked, match="mật khẩu"):
+        for _ in range(4 * MAX_PASSWORD_TRIES):
+            session.type_and_submit()
+    assert session.password_tries == MAX_PASSWORD_TRIES
+
+
+def test_nhan_ra_sai_mat_khau_tren_trang_tieng_viet():
+    from reader.mail_login import blocker_in
+
+    assert blocker_in(
+        "tài khoản hoặc mật khẩu của bạn không chính xác. nếu bạn không nhớ "
+        "mật khẩu của mình, hãy đặt lại ngay bây giờ."
+    ) == "sai mật khẩu"

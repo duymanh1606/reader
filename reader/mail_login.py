@@ -74,6 +74,11 @@ USE_PASSWORD_TEXTS = (
 )
 MAX_USE_PASSWORD_CLICKS = 3
 
+# Gõ mật khẩu mấy lần thì thôi. Lần hai là cho trường hợp form React nuốt mất
+# lần đầu; quá nữa thì Microsoft đang từ chối mà ta không đọc ra lý do - gõ
+# tiếp chỉ làm tài khoản bị khoá vì nhập sai liên tục.
+MAX_PASSWORD_TRIES = 2
+
 # Microsoft chen vào đủ thứ màn hình CHỈ ĐỂ THÔNG BÁO trên đường vào hộp thư -
 # "We're updating our terms", "A quick note about your Microsoft account",
 # "Welcome to the new Outlook"... Danh sách sẽ còn dài ra, nên ở đây không kể
@@ -138,6 +143,10 @@ BLOCKERS = {
         "that microsoft account doesn't exist",
         "password is incorrect",
         "we couldn't find an account",
+        # Đi qua IP Việt Nam thì Microsoft trả trang tiếng Việt.
+        "mật khẩu của bạn không chính xác",
+        "mật khẩu không chính xác",
+        "tài khoản microsoft đó không tồn tại",
     ),
     "tài khoản bị khoá": (
         "your account has been locked", "account has been suspended",
@@ -287,6 +296,7 @@ class _Login:
         # / mật khẩu trong lượt này chưa. Xem `_email_input`.
         self.email_done = False
         self.password_done = False
+        self.password_tries = 0
         self.opened_portal = False
         self.switch_clicks = 0
         self.notice_clicks = 0
@@ -401,7 +411,14 @@ class _Login:
                 self.page.wait_for_timeout(1500)
                 self.typed_password = False
                 return True
+            if self.password_tries >= MAX_PASSWORD_TRIES:
+                raise MailLoginBlocked(
+                    f"đã nhập mật khẩu {self.password_tries} lần mà Microsoft vẫn "
+                    "hỏi lại - nhiều khả năng sai mật khẩu; xem ảnh chụp màn hình "
+                    "để biết trang đang báo gì"
+                )
             _type(o_mat_khau, self.password)
+            self.password_tries += 1
             self.typed_password = True
             self.password_done = True
             logger.info("hộp thư %s: đã nhập mật khẩu", self.email)

@@ -28,6 +28,14 @@ def parse(url: str | None) -> dict[str, str] | None:
     parts = urlparse(url)
     if not parts.hostname:
         raise ValueError(f"không đọc được proxy: {url[:60]}")
+    # Chromium không gửi username/password cho SOCKS: Playwright vẫn nhận cấu
+    # hình, rồi mọi trang đổ ERR_PROXY_CONNECTION_FAILED - báo ngay ở đây.
+    if parts.scheme.startswith("socks") and parts.username:
+        raise ValueError(
+            "Chromium không gửi được user/pass cho SOCKS5 - dùng cổng HTTP của "
+            "nhà cung cấp proxy (http://user:pass@host:port), hoặc SOCKS5 với "
+            "whitelist IP và bỏ user/pass"
+        )
     proxy = {"server": f"{parts.scheme}://{parts.hostname}:{parts.port or 8080}"}
     if parts.username:
         proxy["username"] = parts.username

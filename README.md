@@ -171,12 +171,27 @@ Cách chữa: cho trình duyệt đi qua proxy dân cư.
 READER_PROXY=http://user:pass@host:port
 ```
 
-`./setup.sh --check` gọi thử ra Internet qua proxy đó và in IP thật bên ngoài
-thấy; `uv run python -m reader --check` in `qua proxy ...` để chắc trình duyệt
-cũng dùng nó.
+`./setup.sh --check` gọi thử ra Internet qua proxy đó, in IP thật bên ngoài
+thấy và so với IP của chính máy (trùng nhau là proxy không có tác dụng);
+`uv run python -m reader --check` in `qua proxy ...` để chắc trình duyệt cũng
+dùng nó.
 
-Nhận cả `socks5://`, và thiếu scheme thì coi là `http://`. Mật khẩu proxy không
-vào log.
+Thiếu scheme thì coi là `http://`. Nhận `socks5://` nhưng **không kèm
+user/pass** — Chromium không gửi được chúng cho SOCKS, nên reader từ chối ngay
+thay vì để mọi trang đổ `ERR_PROXY_CONNECTION_FAILED`. Mật khẩu proxy không vào
+log.
+
+Với proxy mua sẵn (9proxy và tương tự), trỏ thẳng reader vào nó — không cần
+trung gian nào:
+
+- Lấy thông tin proxy **dùng từ xa** (host public, port, user/pass), loại
+  **HTTP**. Địa chỉ kiểu `192.168.x.x:60000` là cổng do app trên máy tính của
+  bạn mở ra — server ngoài Internet không gọi tới được.
+- Gói chỉ xác thực bằng IP: thêm IP public của server vào whitelist, rồi bỏ
+  `user:pass@` khỏi `READER_PROXY`.
+- Chọn IP **cố định** (sticky), cùng một vùng: mỗi lượt một IP khác, nhất là
+  khác nước, thì Microsoft càng nghi.
+- Sửa `.env` xong: `sudo systemctl restart reader && ./setup.sh --check`.
 
 ### Đi ra bằng một IP cố định của riêng bạn (egress-ip-gateway)
 

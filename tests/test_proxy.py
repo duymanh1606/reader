@@ -29,6 +29,13 @@ def test_giu_nguyen_socks5():
     assert parse("socks5://1.2.3.4:1080") == {"server": "socks5://1.2.3.4:1080"}
 
 
+def test_socks5_kem_mat_khau_thi_bao_ngay():
+    """Chromium không gửi user/pass cho SOCKS - để lọt xuống là mọi trang đổ
+    ERR_PROXY_CONNECTION_FAILED mà không ai biết vì sao."""
+    with pytest.raises(ValueError, match="SOCKS5"):
+        parse("socks5://nguoi:matkhau@1.2.3.4:1080")
+
+
 def test_chuoi_hong_thi_bao_ngay():
     with pytest.raises(ValueError):
         parse("http://:9999")

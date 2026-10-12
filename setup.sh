@@ -170,8 +170,8 @@ else
         echo "  Chỉ dùng chữ, số, '-' và '_' - nó đi trong query string."
         [ -z "$TOKEN" ] && read -rp "  READER_TOKEN: " TOKEN
         echo
-        echo "  Proxy cho trình duyệt, dạng http://user:pass@host:3128"
-        echo "  Bỏ trống = không qua proxy."
+        echo "  Proxy cho trình duyệt (proxy dân cư như 9proxy), dạng http://user:pass@host:port"
+        echo "  Dùng cổng HTTP, không SOCKS5. Bỏ trống = không qua proxy."
         [ -z "$PROXY" ] && read -rp "  READER_PROXY: " PROXY
     fi
     [ -z "$TOKEN" ] && { TOKEN="$(openssl rand -hex 16)"; note "READER_TOKEN tự sinh"; }
@@ -208,6 +208,11 @@ if [ -z "$PROXY_URL" ]; then
 else
     # Che mật khẩu khi in. Cùng quy ước với reader/proxy.py.
     note "proxy: $(printf '%s' "$PROXY_URL" | sed -E 's|://([^:]+):[^@]*@|://\1:***@|')"
+    proxy_host=$(printf '%s' "$PROXY_URL" | sed -E 's|^[a-z0-9]+://||; s|^[^@]*@||; s|[:/].*$||')
+
+    case "$PROXY_URL" in
+        socks*://*@*) bad "SOCKS5 kèm user/pass - Chromium không gửi được; dùng cổng HTTP của nhà cung cấp (http://user:pass@host:port)" ;;
+    esac
 
     # curl trước Chromium: nó tách được "đường mạng/token sai" khỏi "trình duyệt
     # sai". Phải đọc %{http_connect}, KHÔNG %{http_code} - CONNECT bị từ chối
@@ -215,15 +220,30 @@ else
     body=$(curl -s --max-time 20 -x "$PROXY_URL" https://api.ipify.org 2>/dev/null)
     if [ -n "$body" ]; then
         ok "ra Internet bằng IP: $body"
+        # Proxy "chạy" nhưng đi ra bằng chính IP máy này thì Microsoft vẫn thấy
+        # IP datacenter - y như không có proxy.
+        own=$(curl -s --max-time 10 https://api.ipify.org 2>/dev/null)
+        if [ -n "$own" ] && [ "$own" = "$body" ]; then
+            bad "IP qua proxy TRÙNG IP của máy này ($own) - proxy không đổi được IP đi ra"
+        elif [ -n "$own" ]; then
+            note "IP của máy này là $own - khác, tức là proxy có tác dụng"
+        fi
     else
         code=$(curl -s -o /dev/null --max-time 20 -w '%{http_connect}' \
                  -x "$PROXY_URL" https://api.ipify.org 2>/dev/null)
         case "$code" in
-            407) bad "407 - sai user/mật khẩu proxy (với egw: token sai, đã revoke, hoặc sai workspace id)" ;;
-            403) bad "403 - proxy từ chối đích (với egw: chưa có mapping workspace->route)" ;;
-            503) bad "503 - proxy không có đường ra (với egw: route UNHEALTHY hoặc vượt giới hạn)" ;;
-            000|"") bad "không có phản hồi - không tới được proxy, hoặc IP máy này không được phép (egw: allowed_client_cidrs)" ;;
+            407) bad "407 - sai user/mật khẩu proxy, hoặc gói proxy chỉ xác thực bằng whitelist IP (egw: token sai/đã revoke)" ;;
+            403) bad "403 - proxy từ chối: IP máy này chưa nằm trong whitelist, hoặc proxy chặn đích (egw: chưa có mapping workspace->route)" ;;
+            502|503) bad "$code - proxy không có đường ra: IP dân cư đã offline/hết hạn, đổi IP khác (egw: route UNHEALTHY)" ;;
+            000|"") bad "không có phản hồi - không tới được proxy, hoặc IP máy này không được phép (whitelist / egw: allowed_client_cidrs)" ;;
             *)   bad "proxy trả $code" ;;
+        esac
+        # 192.168.x.x:60000 là kiểu cổng mà app proxy trên máy tính cá nhân mở
+        # ra - chỉ máy trong LAN đó gọi được, server ngoài Internet thì không.
+        case "$proxy_host" in
+            192.168.*|10.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
+                note "$proxy_host là địa chỉ mạng nội bộ. Nếu đó là cổng do app proxy trên máy tính của bạn mở ra"
+                note "thì server không gọi tới được - lấy host:port/user:pass mà nhà cung cấp cấp cho dùng từ xa." ;;
         esac
     fi
 fi

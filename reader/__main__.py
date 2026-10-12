@@ -113,7 +113,11 @@ def _check(settings: Settings) -> bool:
     from reader.browser import launch_persistent
 
     kenh = settings.browser_channel or "(Chromium của Playwright)"
-    proxy = proxy_mo.parse(settings.proxy_url)
+    try:
+        proxy = proxy_mo.parse(settings.proxy_url)
+    except ValueError as exc:
+        print(f"READER_PROXY sai: {exc}", flush=True)
+        return False
     print(f"kênh trình duyệt: {kenh}\nheadless: {settings.headless}\n"
           f"{proxy_mo.describe(proxy)}", flush=True)
     profile = settings.profiles_dir / ".thu-trinh-duyet"

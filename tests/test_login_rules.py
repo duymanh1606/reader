@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from reader.mail_login import _Login
+from reader.mail_login import _Login, _stay_signed_in
 
 EMAIL = "nguoidung@outlook.com"
 PASSWORD = "MatKhau#2026"
@@ -42,6 +42,20 @@ def test_go_dia_chi_vao_o_dang_nhap(screen):
                   "</form>")
     _Login(page, EMAIL, PASSWORD).type_and_submit()
     assert page.input_value("input[name='loginfmt']") == EMAIL
+
+
+def test_stay_signed_in_bam_yes_khong_bam_nut_dong(screen):
+    # Form Fluent mới có nút X đóng cũng là button[type='submit'] và đứng trước
+    # nút "Yes". Phải bấm "Yes", không được bấm nút X (sẽ treo/bỏ việc).
+    page = screen(
+        "<p>Stay signed in?</p>"
+        "<button type='submit' id='close-button' aria-label='Close' "
+        "data-testid='dismissIcon' onclick=\"document.title='DONG'\">X</button>"
+        "<button type='submit' onclick=\"document.title='YES'\">Yes</button>"
+        "<button type='submit' onclick=\"document.title='NO'\">No</button>"
+    )
+    assert _stay_signed_in(page) is True
+    assert page.title() == "YES"
 
 
 def test_go_mat_khau_vao_o_mat_khau(screen):
@@ -112,6 +126,21 @@ def test_khong_go_gi_tren_ten_mien_la(browser):
         with pytest.raises(MailLoginBlocked):
             _Login(page, EMAIL, PASSWORD).type_and_submit()
         assert page.input_value("input[name='passwd']") == ""
+    finally:
+        page.close()
+
+
+def test_cong_dang_nhap_khong_mo_duoc_thi_noi_loi_proxy(browser):
+    """Proxy chặn login.live.com: mọi điều hướng hỏng, trang là chrome-error.
+    `login()` phải nổi lỗi rõ (gợi ý đổi IP) sau vài nhịp, thay vì báo nhầm
+    "đã vào được" rồi để `fetch` lặp vô tận."""
+    from reader.mail_login import login, MailLoginBlocked
+
+    page = browser.new_page()
+    page.route("**/*", lambda route, request: route.abort())
+    try:
+        with pytest.raises(MailLoginBlocked, match="proxy"):
+            login(page, EMAIL, PASSWORD, timeout_seconds=15)
     finally:
         page.close()
 

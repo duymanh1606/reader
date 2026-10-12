@@ -79,6 +79,10 @@ MAX_USE_PASSWORD_CLICKS = 3
 # tiếp chỉ làm tài khoản bị khoá vì nhập sai liên tục.
 MAX_PASSWORD_TRIES = 2
 
+# Trang lỗi của trình duyệt (proxy cắt kết nối) thì mở lại cổng mấy nhịp rồi
+# thôi. Dai hơn thế là lỗi mạng thật, nổi lên cho người biết thay vì spin.
+MAX_ERROR_PAGE_TRIES = 3
+
 # Microsoft chen vào đủ thứ màn hình CHỈ ĐỂ THÔNG BÁO trên đường vào hộp thư -
 # "We're updating our terms", "A quick note about your Microsoft account",
 # "Welcome to the new Outlook"... Danh sách sẽ còn dài ra, nên ở đây không kể
@@ -155,6 +159,38 @@ BLOCKERS = {
     "đổi mật khẩu": ("update your password", "your password has expired"),
 }
 
+# "Password sign-in isn't available. Try another method." - Microsoft chặn đăng
+# nhập bằng mật khẩu THEO RỦI RO khi IP proxy bẩn/bị gắn cờ, dù mật khẩu đúng và
+# tài khoản vẫn cho dùng mật khẩu. Thử thật trên server: cùng tài khoản + mật
+# khẩu, IP proxy 502 thì bị chặn, đổi sang IP VN sạch thì đăng nhập được ngay.
+# Nên ĐÂY KHÔNG phải việc giao cho người: báo lỗi có dấu nhận biết để tầng job
+# đổi IP rồi chạy lại (xem reader/rotate.py: should_rotate, reader/jobs.py).
+PASSWORD_SIGNIN_UNAVAILABLE_TEXTS = (
+    "password sign-in isn",  # "...isn't available" (tránh phụ thuộc dấu ')
+    "đăng nhập bằng mật khẩu không khả dụng",
+)
+# Dấu để tầng job biết "đổi IP rồi thử lại" (xem reader/rotate.py: RISK_BLOCK_MARKERS).
+# Mọi thông báo lỗi nghi do IP phải KẾT bằng câu này thì `should_rotate` mới bắt.
+ROTATE_HINT = "cần đổi IP sạch rồi thử lại"
+PASSWORD_SIGNIN_UNAVAILABLE_MSG = (
+    "Microsoft chặn đăng nhập bằng mật khẩu trên IP này "
+    "(password sign-in isn't available) - IP proxy có thể bẩn, " + ROTATE_HINT
+)
+
+# Lỗi TẠM THỜI của Microsoft, hầu như luôn do IP chập chờn (tải trang không
+# xong): "There was an issue looking up your account. Tap Next to try again.",
+# "Something went wrong". Gặp là đổi IP rồi thử lại, đừng bấm Next hoài tới hết
+# giờ (thử thật: lần nào IP yếu là dính, IP ổn thì không).
+TRANSIENT_MS_ERROR_TEXTS = (
+    "there was an issue looking up your account",
+    "issue looking up your account",
+    "có sự cố khi tra cứu tài khoản",
+)
+TRANSIENT_MS_ERROR_MSG = (
+    "Microsoft báo lỗi tạm thời khi tra cứu tài khoản - IP proxy chập chờn, "
+    + ROTATE_HINT
+)
+
 
 class MailLoginBlocked(RuntimeError):
     """Gặp thứ agent không được tự làm (2FA, CAPTCHA, sai mật khẩu...)."""
@@ -193,22 +229,67 @@ def find_blocker(page) -> str | None:
     return blocker_in(_page_text(page))
 
 
+def password_signin_unavailable(page) -> bool:
+    """Trang có đang báo "Password sign-in isn't available" không?
+
+    Chỉ hiện sau khi đã gửi mật khẩu, nên gọi trong vòng đăng nhập sau mỗi lần
+    gửi. Đây là chặn theo rủi ro do IP, không phải thiết lập cố định của tài
+    khoản - người gọi nên đổi IP rồi thử lại, không giao cho người.
+    """
+    text = _page_text(page)
+    return any(t in text for t in PASSWORD_SIGNIN_UNAVAILABLE_TEXTS)
+
+
+def transient_ms_error(page) -> bool:
+    """Trang có đang báo lỗi tạm thời của Microsoft (nghi do IP) không?"""
+    text = _page_text(page)
+    return any(t in text for t in TRANSIENT_MS_ERROR_TEXTS)
+
+
 def _click(locator) -> None:
     locator.click(timeout=15000)
 
 
 def _type(locator, value: str) -> None:
-    """Gõ từng ký tự - form của Microsoft cũng là form React."""
-    locator.click(timeout=15000)
-    locator.fill("", timeout=15000)
-    locator.press_sequentially(value)
+    """Gõ từng ký tự THONG THẢ, rồi KIỂM lại ô có đúng từng ký tự không.
+
+    Form của Microsoft là form React: gõ quá nhanh thì nó nuốt mất ký tự, ô
+    còn lại một chuỗi SAI mà không báo gì - đúng là mật khẩu gõ rồi vẫn bị hỏi
+    lại. Nên gõ chậm (có `delay`), rồi đọc `input.value` so lại với `value`;
+    lệch thì xoá sạch, gõ lại, tối đa 3 lần.
+    """
+    for attempt in range(3):
+        locator.click(timeout=15000)
+        locator.fill("", timeout=15000)
+        locator.press_sequentially(value, delay=90)
+        try:
+            typed = locator.input_value(timeout=5000)
+        except Exception:
+            return  # không đọc lại được thì đành tin là đã gõ xong
+        if typed == value:
+            return
+        logger.warning(
+            "ô nhập lệch sau khi gõ (dài %d, cần %d) - gõ lại lần %d",
+            len(typed), len(value), attempt + 2,
+        )
+    raise MailLoginBlocked(
+        "gõ mãi mà ô nhập vẫn không khớp giá trị cần gõ - "
+        "form có thể đang chặn; xem ảnh chụp màn hình"
+    )
 
 
 def logged_in(page) -> bool:
-    """Đã vào được hộp thư chưa?"""
-    from reader.outlook import needs_login
+    """Đã vào được hộp thư chưa?
 
-    return not needs_login(page)
+    Kiểm DƯƠNG TÍNH: phải thật sự thấy hộp thư. "Không phải trang đăng nhập" là
+    chưa đủ - một trang lỗi của trình duyệt (`chrome-error://chromewebdata/` khi
+    proxy cắt kết nối tới login.live.com) cũng không phải trang đăng nhập, mà
+    chẳng có mail nào. Trước đây dùng `not needs_login(page)` nên trang lỗi lọt
+    qua, `login()` return "đã vào được", rồi `fetch` quay lại và lặp vô tận.
+    """
+    from reader.outlook import in_inbox
+
+    return in_inbox(page)
 
 
 def _use_password_link(page):
@@ -418,10 +499,14 @@ class _Login:
                 self.typed_password = False
                 return True
             if self.password_tries >= MAX_PASSWORD_TRIES:
+                # Gõ đúng mật khẩu bấy nhiêu lần mà vẫn ở màn hình mật khẩu, lại
+                # KHÔNG có câu "sai mật khẩu" tường minh (câu đó `find_blocker`
+                # bắt trước) - gần như luôn là chặn theo IP, không phải sai mật
+                # khẩu. Nên báo lỗi có ROTATE_HINT để tầng job đổi IP rồi thử lại.
                 raise MailLoginBlocked(
                     f"đã nhập mật khẩu {self.password_tries} lần mà Microsoft vẫn "
-                    "hỏi lại - nhiều khả năng sai mật khẩu; xem ảnh chụp màn hình "
-                    "để biết trang đang báo gì"
+                    "ở màn hình mật khẩu (không báo sai mật khẩu) - gần như chắc "
+                    "chắn IP bị chặn, " + ROTATE_HINT
                 )
             _type(o_mat_khau, self.password)
             self.password_tries += 1
@@ -471,8 +556,11 @@ def login(
             f"'{email}|matkhau'"
         )
 
+    from reader.outlook import is_error_page
+
     session = _Login(page, email, password)
     deadline = time.monotonic() + timeout_seconds
+    error_streak = 0        # số nhịp liên tiếp đứng ở trang lỗi của trình duyệt
 
     while time.monotonic() < deadline:
         if should_stop is not None and should_stop():
@@ -484,12 +572,42 @@ def login(
             logger.info("hộp thư %s: đã vào được (%s)", email, outlook_short_url(page))
             return
 
+        # Trang lỗi của trình duyệt: không mở được cổng đăng nhập. Thử mở lại
+        # vài nhịp - trang có thể hồi. Lỗi dai là lỗi mạng thật (proxy chặn),
+        # nổi lên để người biết, đừng lặp câm cho tới khi hết giờ.
+        if is_error_page(page):
+            error_streak += 1
+            if error_streak >= MAX_ERROR_PAGE_TRIES:
+                raise MailLoginBlocked(
+                    f"không mở được cổng đăng nhập Microsoft (trang lỗi "
+                    f"'{outlook_short_url(page)}') - proxy có thể đang chặn "
+                    "login.live.com; " + ROTATE_HINT
+                )
+            logger.info("hộp thư %s: trang lỗi (%s), mở lại cổng đăng nhập",
+                        email, outlook_short_url(page))
+            try:
+                page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
+            except Exception as exc:
+                logger.debug("mở lại cổng đăng nhập vẫn lỗi: %s", exc)
+            page.wait_for_timeout(1500)
+            continue
+        error_streak = 0
+
         if session.answer_stay_signed_in():
             continue
         if session.dismiss_notice():
             continue
         if session.switch_to_password():
             continue
+
+        if password_signin_unavailable(page):
+            # Chặn theo IP, không phải việc của người: báo lỗi có dấu nhận biết
+            # để tầng job đổi IP rồi chạy lại.
+            raise MailLoginBlocked(PASSWORD_SIGNIN_UNAVAILABLE_MSG)
+
+        if transient_ms_error(page):
+            # Lỗi tạm thời do IP: đổi IP rồi thử lại, đừng bấm Next hoài.
+            raise MailLoginBlocked(TRANSIENT_MS_ERROR_MSG)
 
         rate_limited = find_blocker(page)
         if rate_limited:
@@ -502,8 +620,11 @@ def login(
             continue
         session.type_and_submit()
 
+    # Hết giờ mà không vào được, cũng không dính blocker nào rõ ràng (2FA/
+    # CAPTCHA/sai mật khẩu đã raise trước) - gần như luôn là IP chập chờn khiến
+    # trang không tải xong. Đổi IP rồi thử lại thường qua.
     raise MailLoginBlocked(
-        f"hết {timeout_seconds}s mà hộp thư {email} vẫn chưa mở - hãy xem cửa sổ đó"
+        f"hết {timeout_seconds}s mà hộp thư {email} vẫn chưa mở - " + ROTATE_HINT
     )
 
 
@@ -513,21 +634,14 @@ def _stay_signed_in(page) -> bool:
     if "stay signed in" not in text and "duy trì đăng nhập" not in text:
         return False
 
-    button = _first_visible(page, SUBMIT_BUTTONS)
+    # Nút chính thống của màn hình cũ (#idSIButton9 = "Yes").
+    button = _first_visible(page, ("#idSIButton9", "input[type='submit']"))
     if button is None:
-        # Bản giao diện mới dùng <button> trơn, không phải type=submit. Bấm
-        # nút nào cũng được, cốt là đi tiếp - "Yes" là nút chính nên thử trước.
-        for name in ("Yes", "Có", "No", "Không"):
-            for role in ("button", "link"):
-                candidate = page.get_by_role(role, name=name, exact=True).first
-                try:
-                    if candidate.count() and candidate.is_visible():
-                        button = candidate
-                        break
-                except Exception:
-                    continue
-            if button is not None:
-                break
+        # Giao diện Fluent mới: bấm theo TÊN nút ("Yes"/"Có"...). KHÔNG dùng
+        # selector `button[type='submit']` chung ở đây - trên form này nút khớp
+        # đầu tiên lại là nút X đóng (id=close-button, data-testid=dismissIcon),
+        # bấm vào thì treo ở "chờ điều hướng" rồi hết giờ.
+        button = _first_by_name(page, ("Yes", "Có", "No", "Không"))
     if button is None:
         logger.warning("thấy 'Stay signed in?' nhưng không tìm ra nút nào")
         return False

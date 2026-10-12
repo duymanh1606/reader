@@ -11,11 +11,14 @@ from fastapi.testclient import TestClient
 from reader import rotate
 from reader.fetch import Result
 from reader.outlook import Hit
-from reader.rotate import Rotator, proxy_dead
+from reader.mail_login import PASSWORD_SIGNIN_UNAVAILABLE_MSG, ROTATE_HINT
+from reader.rotate import Rotator, proxy_dead, risk_blocked, should_rotate
 from reader.server import create_app
 
 CHET = ("lỗi: Page.goto: net::ERR_TUNNEL_CONNECTION_FAILED at "
         "https://outlook.live.com/mail/0/")
+# Microsoft chặn mật khẩu theo rủi ro của IP - đây là thông báo login dựng ra.
+CHAN_IP = PASSWORD_SIGNIN_UNAVAILABLE_MSG
 
 
 def test_nhan_ra_ip_chet():
@@ -25,6 +28,23 @@ def test_nhan_ra_ip_chet():
     assert not proxy_dead("net::ERR_PROXY_CONNECTION_FAILED")
     assert not proxy_dead("sai mật khẩu")
     assert not proxy_dead(None)
+
+
+def test_nhan_ra_chan_theo_ip():
+    # Chặn đăng nhập mật khẩu theo rủi ro: không phải IP chết, nhưng vẫn đổi IP.
+    assert risk_blocked(CHAN_IP)
+    assert not proxy_dead(CHAN_IP)
+    assert should_rotate(CHAN_IP)
+    assert should_rotate(CHET)
+    # Gõ đúng mật khẩu mà vẫn bị hỏi lại: thông báo kết bằng ROTATE_HINT, cũng đổi IP.
+    msg_2_lan = ("đã nhập mật khẩu 2 lần mà Microsoft vẫn ở màn hình mật khẩu "
+                 "(không báo sai mật khẩu) - gần như chắc chắn IP bị chặn, " + ROTATE_HINT)
+    assert risk_blocked(msg_2_lan)
+    assert should_rotate(msg_2_lan)
+    # Lỗi thường thì không đổi IP.
+    assert not risk_blocked("sai mật khẩu")
+    assert not should_rotate("sai mật khẩu")
+    assert not should_rotate(None)
 
 
 def test_khong_khai_lenh_thi_tat():
@@ -103,6 +123,17 @@ def _xong(client, body):
 def test_ip_chet_thi_doi_ip_roi_chay_lai(settings, monkeypatch):
     client, goi = _client(settings, monkeypatch,
                           [Result(error=CHET), Result(hit=Hit("123456", "", "", ""))],
+                          "14.169.1.2")
+    with client:
+        job = _xong(client, {"email": "ten@outlook.com|mk"})
+    assert job["code"] == "123456"
+    assert len(goi) == 2
+
+
+def test_chan_theo_ip_thi_doi_ip_roi_chay_lai(settings, monkeypatch):
+    # Bị chặn mật khẩu vì IP bẩn: đổi IP sạch rồi chạy lại là vào được.
+    client, goi = _client(settings, monkeypatch,
+                          [Result(error=CHAN_IP), Result(hit=Hit("123456", "", "", ""))],
                           "14.169.1.2")
     with client:
         job = _xong(client, {"email": "ten@outlook.com|mk"})

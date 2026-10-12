@@ -30,6 +30,26 @@ def test_trang_gioi_thieu_khong_phai_hop_thu(browser):
         ctx.close()
 
 
+def test_trang_loi_trinh_duyet_khong_phai_hop_thu(browser):
+    """Proxy cắt kết nối -> Chrome dựng trang lỗi (chrome-error://chromewebdata/).
+    Trang đó không phải form đăng nhập nên `needs_login` trả False; thiếu
+    `is_error_page` thì nó lọt qua và bị tưởng là "đã vào hộp thư"."""
+    page = browser.new_page()
+    page.route("**/*", lambda route, request: route.abort())
+    try:
+        try:
+            page.goto("https://login.live.com/login.srf",
+                      wait_until="domcontentloaded", timeout=5000)
+        except Exception:
+            pass                       # điều hướng hỏng là đúng ý test
+        assert outlook.is_error_page(page)
+        assert not outlook.is_login_page(page)
+        assert not outlook.on_signed_out_page(page)
+        assert not outlook.in_inbox(page)
+    finally:
+        page.close()
+
+
 def test_nhan_ra_trang_dang_nhap(browser):
     ctx = signed_out_context(browser)
     page = ctx.new_page()

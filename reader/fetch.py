@@ -27,6 +27,7 @@ from reader.mail_login import (
     sign_out,
 )
 from reader.outlook import Hit
+from reader.rotate import should_rotate
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,14 @@ def _watch(page, email, password, settings: Settings, report, stop,
             except MailLoginBlocked as exc:
                 if stop():
                     raise Cancelled
+                # Chặn nghi do IP (IP chết, hoặc Microsoft chặn mật khẩu theo
+                # rủi ro): để lỗi thoát ra ngoài `run()` cho tầng job đổi IP rồi
+                # chạy lại - đừng nuốt rồi ngồi chờ người, vì đổi IP thường qua.
+                if should_rotate(str(exc)):
+                    logger.warning("hộp thư %s: %s -> để tầng job đổi IP, chạy lại",
+                                   email, exc)
+                    snapshot(page, snap)
+                    raise
                 login_failed = True
                 logger.warning("hộp thư %s: %s", email, exc)
                 report("cần bạn đăng nhập", str(exc))

@@ -34,10 +34,28 @@ ROTATE_TRIES = 3
 CHECK_URL = "https://api.ipify.org"
 
 
+# Microsoft chặn đăng nhập bằng mật khẩu THEO RỦI RO khi IP proxy bẩn/bị gắn cờ
+# ("Password sign-in isn't available", hoặc cứ gõ đúng mật khẩu mà vẫn bị hỏi
+# lại). IP sạch thường qua được, nên cũng đổi IP rồi thử lại như khi IP chết.
+# Dấu này do reader.mail_login đặt vào cuối thông báo lỗi (ROTATE_HINT).
+RISK_BLOCK_MARKERS = ("password sign-in isn", "cần đổi ip sạch rồi thử lại")
+
+
 def proxy_dead(error: str | None) -> bool:
     """Lỗi của một lượt có phải do IP sau proxy đã chết không?"""
     text = (error or "").lower()
     return any(marker in text for marker in DEAD_MARKERS)
+
+
+def risk_blocked(error: str | None) -> bool:
+    """Lỗi có phải do Microsoft chặn mật khẩu theo rủi ro của IP không?"""
+    text = (error or "").lower()
+    return any(marker in text for marker in RISK_BLOCK_MARKERS)
+
+
+def should_rotate(error: str | None) -> bool:
+    """Lỗi này có đáng đổi IP rồi chạy lại không? (IP chết, hoặc bị chặn theo IP)"""
+    return proxy_dead(error) or risk_blocked(error)
 
 
 def exit_ip(proxy_url: str, timeout: float = 15) -> str | None:

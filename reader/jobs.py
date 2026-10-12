@@ -21,7 +21,7 @@ from reader import mailer as mailer_mo
 from reader import webhook as webhook_mo
 from reader.config import Settings
 from reader.fetch import Result, run
-from reader.rotate import Rotator, proxy_dead
+from reader.rotate import Rotator, proxy_dead, should_rotate
 
 logger = logging.getLogger(__name__)
 
@@ -197,12 +197,15 @@ class Jobs:
                 return Result(error=f"lỗi: {exc}")
 
         result = attempt()
-        # IP dân cư sau proxy chết giữa chừng: đổi IP rồi chạy lại MỘT lần.
-        # Một lần thôi - IP mới mà cũng chết ngay thì là chuyện khác, để người xem.
-        if (proxy_dead(result.error) and self.rotator.enabled
+        # Đổi IP rồi chạy lại MỘT lần khi: IP dân cư sau proxy chết giữa chừng,
+        # hoặc Microsoft chặn đăng nhập mật khẩu theo rủi ro của IP. Một lần thôi
+        # - IP mới mà cũng hỏng ngay thì là chuyện khác, để người xem.
+        if (should_rotate(result.error) and self.rotator.enabled
                 and not job._stop.is_set()):
             failed_at = time.monotonic()
-            report("đang đổi IP proxy", "IP dân cư cũ đã offline")
+            ly_do = ("IP dân cư cũ đã offline" if proxy_dead(result.error)
+                     else "IP lỗi/bị chặn khi đăng nhập")
+            report("đang đổi IP proxy", ly_do)
             ip = self.rotator.rotate(failed_at)
             if ip is None:
                 result = Result(error=f"{result.error}\n-> đã thử đổi IP proxy "

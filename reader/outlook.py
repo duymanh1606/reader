@@ -104,6 +104,22 @@ def on_signed_out_page(page) -> bool:
     return any(part in url for part in SIGNED_OUT_URLS)
 
 
+# Khi điều hướng hỏng (proxy cắt kết nối, DNS trượt, TLS reset), Chrome dựng
+# một trang lỗi nội bộ: URL thành `chrome-error://chromewebdata/`, hoặc rỗng,
+# hoặc `about:blank`. Trang đó KHÔNG phải form đăng nhập, cũng KHÔNG phải trang
+# giới thiệu - nên nếu không nhận ra riêng, nó lọt qua `needs_login` (trả False)
+# và bị tưởng nhầm là "đã vào hộp thư".
+ERROR_URL_MARKERS = ("chrome-error", "chromewebdata", "about:blank")
+
+
+def is_error_page(page) -> bool:
+    """Trang lỗi của trình duyệt, không mở được nội dung thật."""
+    url = (page.url or "").strip().lower()
+    if not url:
+        return True
+    return any(mark in url for mark in ERROR_URL_MARKERS)
+
+
 def needs_login(page) -> bool:
     """Chưa vào được hộp thư: hoặc đang ở form đăng nhập, hoặc bị đá về trang
     giới thiệu.

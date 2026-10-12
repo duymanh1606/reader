@@ -21,6 +21,115 @@ nên mật khẩu có `|` vẫn nguyên). Chỉ dán email cũng được: agent
 cửa sổ Outlook và chờ bạn đăng nhập một lần — phiên nằm lại trong profile nên
 "một lần" là một lần thật.
 
+## Lấy máy cá nhân làm server (ngrok)
+
+Không thuê VPS: reader chạy trên máy của bạn, [ngrok](https://ngrok.com) mở nó
+ra Internet bằng một địa chỉ HTTPS cố định. So với VPS:
+
+- máy có màn hình nên Chrome hiện **cửa sổ thật** - gặp 2FA/CAPTCHA thì bạn xử
+  lý ngay, phiên nằm lại trong profile cho các lần sau;
+- đi ra bằng **IP nhà** (IP dân cư - Microsoft ít nghi), hoặc qua app proxy
+  (9proxy) đang chạy trên máy;
+- đổi lại: **máy phải bật**, tắt hay ngủ là reader mất.
+
+```
+điện thoại / máy khác ──HTTPS──> https://<tên>.ngrok-free.dev ──> ngrok trên máy bạn
+                                                                     └─> reader 127.0.0.1:5678 ──> Outlook
+```
+
+### Một lệnh
+
+```bash
+git clone <repo> ~/code/reader && cd ~/code/reader && ./run-ngrok.sh
+```
+
+Lần đầu, script tự cài những gì còn thiếu - **uv**, thư viện Python, Chromium
+(chỉ khi máy không có Chrome thật), **ngrok** (bản Linux vào `~/.local/bin`, hoặc
+dùng `ngrok.exe` của Windows nếu đã có) - tự tạo `.env` với token ngẫu nhiên,
+rồi chạy. Thứ duy nhất nó hỏi, một lần: **authtoken ngrok** - lấy miễn phí ở
+<https://dashboard.ngrok.com/get-started/your-authtoken>. Các lần sau chỉ còn:
+
+```bash
+cd ~/code/reader && ./run-ngrok.sh
+```
+
+Không muốn bị hỏi, hoặc đi qua proxy ngay từ đầu:
+
+```bash
+NGROK_AUTHTOKEN=<token> READER_PROXY=http://192.168.208.1:60000 ./run-ngrok.sh
+./run-ngrok.sh --no-run      # chỉ cài/kiểm, không chạy
+```
+
+Địa chỉ công khai cố định của bạn (`*.ngrok-free.dev`) xem ở
+<https://dashboard.ngrok.com/domains> - tắt bật lại vẫn giữ nguyên.
+
+`.env` script tạo ra (mode 600, sửa xong thì Ctrl+C rồi chạy lại):
+
+| Biến | Vì sao |
+|---|---|
+| `READER_HOST=127.0.0.1` | reader **chỉ** nghe trên máy này; đường duy nhất từ ngoài vào là ngrok. Đừng để `0.0.0.0` |
+| `READER_TOKEN` | **bắt buộc**: địa chỉ ngrok là công khai, token là thứ duy nhất chặn người lạ. Xem: `grep READER_TOKEN .env` |
+| `READER_BROWSER_CHANNEL` | `chrome` khi máy có Chrome thật (Microsoft ít nghi hơn), rỗng thì dùng Chromium |
+| `READER_HEADLESS=false` | hiện cửa sổ để bạn tự xử lý 2FA |
+| `READER_PROXY` | để `#` = đi bằng IP nhà; bỏ `#` để đi qua app 9proxy - xem dưới |
+
+**9proxy trên Windows, reader trong WSL:** cổng mà app 9proxy hiện ra (cột
+*Local IP*, ví dụ `192.168.208.1:60000`) nằm trên máy Windows - từ WSL gọi tới
+được, vì đó chính là IP gateway của WSL:
+
+```bash
+ip route | awk '/default/{print $3}'                              # IP Windows nhìn từ WSL
+curl -s -x http://192.168.208.1:60000 https://api.ipify.org; echo   # phải in ra IP của 9proxy
+```
+
+`502` ở đây là IP dân cư gán vào cổng đã offline: chọn IP khác trong
+*Forwarding List* của app. `READER_PROXY_ROTATE` không dùng được với app
+Windows (app không có lệnh dòng lệnh).
+
+### Khi chạy
+
+Script in ra:
+
+```
+Mở từ bất kỳ đâu (lần đầu kèm token, sau đó token nằm trong cookie):
+  https://<tên>.ngrok-free.dev/?token=<TOKEN>
+```
+
+**Để cửa sổ terminal đó mở** - Ctrl+C là tắt cả reader lẫn ngrok; log của
+reader ở `reader-local.log`. Nhớ tắt chế độ ngủ của Windows (Settings → System
+→ Power → Sleep: *Never*).
+
+### Dùng từ máy khác
+
+- Trình duyệt: mở địa chỉ `?token=...` ở trên **một lần**. ngrok hiện một trang
+  cảnh báo ("You are about to visit...") → bấm **Visit Site**. Token được cất
+  vào cookie, lần sau mở `https://<tên>.ngrok-free.dev/` là đủ.
+- API: kèm token, và header bỏ trang cảnh báo của ngrok:
+
+  ```bash
+  curl -X POST https://<tên>.ngrok-free.dev/api/code \
+       -H "X-Reader-Token: <TOKEN>" -H "ngrok-skip-browser-warning: 1" \
+       -H "content-type: application/json" \
+       -d '{"email": "ten@outlook.com|MatKhau123"}'
+  ```
+
+Xem ai đang gọi vào: <http://127.0.0.1:4040> (bảng điều khiển của ngrok trên
+máy chạy nó).
+
+### Gặp lỗi
+
+| Thấy | Nghĩa là | Làm gì |
+|---|---|---|
+| `ERR_NGROK_334 ... is already online` | địa chỉ đang được một ngrok khác giữ (gói miễn phí: một nơi một lúc) | `pkill -f 'ngrok http'; taskkill.exe /IM ngrok.exe /F`, hoặc dashboard → *Agents* → Stop, rồi chạy lại |
+| `ERR_NGROK_8012` trên trình duyệt | ngrok chạy nhưng reader không chạy | xem `reader-local.log`, chạy lại `./run-ngrok.sh` |
+| `ERR_NGROK_4018` / `105` | chưa gắn authtoken, hoặc token sai | chạy lại `./run-ngrok.sh` trong terminal (nó hỏi), hoặc `NGROK_AUTHTOKEN=<token> ./run-ngrok.sh` |
+| `401` / trang báo thiếu token | mở thiếu `?token=` hoặc token sai | `grep READER_TOKEN .env` |
+| lượt nào cũng `ERR_TUNNEL_CONNECTION_FAILED` | IP 9proxy gán vào cổng đã chết | chọn IP khác trong app, hoặc comment `READER_PROXY` để đi bằng IP nhà |
+| `reader đã chạy sẵn ở cổng 5678` | còn một reader cũ đang chạy | script dùng luôn nó; muốn đọc lại `.env` thì `pkill -f "python -m reader"` rồi chạy lại |
+
+Sửa `.env` xong phải tắt (Ctrl+C) rồi chạy lại `./run-ngrok.sh` - reader chỉ
+đọc `.env` lúc khởi động.
+
 ## Triển khai lên server
 
 Cần `git` và [`uv`](https://docs.astral.sh/uv/). Một lần:

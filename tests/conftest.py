@@ -27,13 +27,16 @@ def browser(playwright):
 
 @pytest.fixture
 def settings(tmp_path) -> Settings:
-    """Nhịp ngắn: trang mẫu đổi ngay trong cùng tick, không cần chờ như thật."""
+    """Nhịp ngắn, nhưng login_timeout đủ cho cả luồng đăng nhập nhiều bước:
+    mỗi màn hình (email, mật khẩu, 'quick note', 'stay signed in'...) có một
+    nhịp chờ ~2s cố định trong mail_login, cộng lại cần hơn 20s - để ngắn quá
+    thì luồng đăng nhập thật chưa kịp xong đã bị cắt."""
     return dataclasses.replace(
         Settings(),
         profiles_dir=tmp_path / "profiles",
         headless=True,
         poll_seconds=1,
         refresh_seconds=60,
-        timeout_seconds=25,
-        login_timeout_seconds=20,
+        timeout_seconds=50,
+        login_timeout_seconds=40,
     )

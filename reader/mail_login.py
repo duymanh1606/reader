@@ -44,12 +44,25 @@ SUBMIT_BUTTONS = (
     "button[type='submit']",
     "button[data-testid='primaryButton']",
 )
-# Cổng đăng nhập. Chưa đăng nhập thì outlook.live.com/mail/0/ đá sang trang
-# giới thiệu trên www.microsoft.com; đi thẳng tới đây chắc hơn nhiều so với dò
-# nút "Sign in" trên trang đó - tôi thử rồi: cái link bắt được hoá ra là trang
-# chính sách riêng tư, và trang đó không có dấu hiệu "chưa đăng nhập" nào nên
-# agent tưởng mình đã vào hộp thư.
+# Hai cổng, dùng ở hai lúc KHÁC nhau:
+#
+# 1. LOGIN_URL - để NHẬP mật khẩu lần đầu. Phải là login.live.com/login.srf:
+#    đây mới là nơi hiện form đăng nhập. KHÔNG dùng outlook.live.com/owa khi
+#    chưa có phiên - owa đá ngược về trang giới thiệu www.microsoft.com, và
+#    agent quay vòng "mở cổng đăng nhập" mãi không thấy form.
+# 2. OUTLOOK_URL - để LẤY phiên Outlook SAU khi đã đăng nhập tài khoản. Đăng
+#    nhập xong login.srf đưa về account.microsoft.com (chưa vào hộp thư); mở
+#    owa?nlp=1 lúc này - đã có phiên - thì vào thẳng hộp thư. `_on_account_home`
+#    lo việc này.
+#
+# Chưa đăng nhập thì outlook.live.com/mail/0/ đá sang trang giới thiệu trên
+# www.microsoft.com; đi thẳng tới cổng chắc hơn nhiều so với dò nút "Sign in"
+# trên trang đó - cái link bắt được từng là trang chính sách riêng tư.
 LOGIN_URL = "https://login.live.com/login.srf"
+OUTLOOK_URL = "https://outlook.live.com/owa/?nlp=1"
+# Trang chủ tài khoản Microsoft: đã đăng nhập tài khoản nhưng chưa vào Outlook.
+ACCOUNT_HOME_HOSTS = ("account.microsoft.com", "account.live.com/proofs")
+MAX_ACCOUNT_HOME_HOPS = 3
 LOGOUT_URL = "https://login.live.com/logout.srf"
 
 # Microsoft giờ mời đăng nhập KHÔNG mật khẩu trước: sau khi nhập địa chỉ, nó
@@ -73,6 +86,13 @@ USE_PASSWORD_TEXTS = (
     "Dùng mật khẩu",
 )
 MAX_USE_PASSWORD_CLICKS = 3
+
+# Chờ cho màn hình sau hiện ra sau mỗi lần bấm/chuyển trang. Không có sự kiện
+# nào báo "màn hình kế đã sẵn" (Microsoft swap div bằng JS, không điều hướng
+# thật), nên đành chờ cứng. Vòng đăng nhập tự đọc lại trang mỗi nhịp và mỗi
+# bước đều có cờ chống làm lại, nên chờ hơi ngắn chỉ tốn thêm một vòng lặp chứ
+# không gõ nhầm - để rộng rãi thì mỗi lượt đăng nhập cộng thêm cả chục giây.
+STEP_WAIT_MS = 800
 
 # Gõ mật khẩu mấy lần thì thôi. Lần hai là cho trường hợp form React nuốt mất
 # lần đầu; quá nữa thì Microsoft đang từ chối mà ta không đọc ra lý do - gõ
@@ -261,7 +281,7 @@ def _type(locator, value: str) -> None:
     for attempt in range(3):
         locator.click(timeout=15000)
         locator.fill("", timeout=15000)
-        locator.press_sequentially(value, delay=90)
+        locator.press_sequentially(value, delay=45)
         try:
             typed = locator.input_value(timeout=5000)
         except Exception:
@@ -276,6 +296,11 @@ def _type(locator, value: str) -> None:
         "gõ mãi mà ô nhập vẫn không khớp giá trị cần gõ - "
         "form có thể đang chặn; xem ảnh chụp màn hình"
     )
+
+
+def _on_account_home(page) -> bool:
+    url = (page.url or "").lower()
+    return any(host in url for host in ACCOUNT_HOME_HOSTS)
 
 
 def logged_in(page) -> bool:
@@ -392,7 +417,7 @@ class _Login:
     def answer_stay_signed_in(self) -> bool:
         """Kiểm ở ĐẦU mỗi vòng: màn hình đó hiện chậm hơn một nhịp là lỡ."""
         if _stay_signed_in(self.page):
-            self.page.wait_for_timeout(2000)
+            self.page.wait_for_timeout(STEP_WAIT_MS)
             return True
         return False
 
@@ -412,7 +437,7 @@ class _Login:
         self.notice_clicks += 1
         logger.info("hộp thư %s: bấm qua một màn hình thông báo", self.email)
         _click(button)
-        self.page.wait_for_timeout(2000)
+        self.page.wait_for_timeout(STEP_WAIT_MS)
         return True
 
     def switch_to_password(self) -> bool:
@@ -430,7 +455,7 @@ class _Login:
         self.switch_clicks += 1
         logger.info("hộp thư %s: chuyển sang đăng nhập bằng mật khẩu", self.email)
         _click(link)
-        self.page.wait_for_timeout(2000)
+        self.page.wait_for_timeout(STEP_WAIT_MS)
         return True
 
     def find_input(self) -> bool:
@@ -447,13 +472,13 @@ class _Login:
                 self.page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
             except Exception as exc:
                 logger.debug("không mở được cổng đăng nhập: %s", exc)
-            self.page.wait_for_timeout(2000)
+            self.page.wait_for_timeout(STEP_WAIT_MS)
             return True
 
         link = _signin_link(self.page)
         if link is not None:
             _click(link)
-            self.page.wait_for_timeout(2000)
+            self.page.wait_for_timeout(STEP_WAIT_MS)
         else:
             self.page.wait_for_timeout(1000)
         return True
@@ -534,7 +559,7 @@ class _Login:
             _click(nut)
         else:
             self.page.keyboard.press("Enter")
-        self.page.wait_for_timeout(2000)
+        self.page.wait_for_timeout(STEP_WAIT_MS)
         return True
 
 
@@ -561,6 +586,7 @@ def login(
     session = _Login(page, email, password)
     deadline = time.monotonic() + timeout_seconds
     error_streak = 0        # số nhịp liên tiếp đứng ở trang lỗi của trình duyệt
+    account_hops = 0        # số lần từ trang tài khoản sang Outlook
 
     while time.monotonic() < deadline:
         if should_stop is not None and should_stop():
@@ -592,6 +618,24 @@ def login(
             page.wait_for_timeout(1500)
             continue
         error_streak = 0
+
+        # Đứng ở trang chủ tài khoản: tài khoản đã đăng nhập, chỉ thiếu phiên
+        # Outlook - qua cổng Outlook là vào thẳng, không phải gõ gì nữa.
+        if _on_account_home(page):
+            account_hops += 1
+            if account_hops > MAX_ACCOUNT_HOME_HOPS:
+                raise MailLoginBlocked(
+                    "đã đăng nhập tài khoản Microsoft nhưng Outlook không mở - "
+                    "xem ảnh chụp màn hình"
+                )
+            logger.info("hộp thư %s: đang ở trang tài khoản (%s), sang Outlook",
+                        email, outlook_short_url(page))
+            try:
+                page.goto(OUTLOOK_URL, wait_until="domcontentloaded", timeout=30000)
+            except Exception as exc:
+                logger.debug("không mở được Outlook: %s", exc)
+            page.wait_for_timeout(STEP_WAIT_MS)
+            continue
 
         if session.answer_stay_signed_in():
             continue

@@ -15,6 +15,13 @@ def _html(body: str):
     )
 
 
+def _js_redirect(route, url: str):
+    """Chuyển trang bằng JS, không bằng 302: request sau một 302 tự dựng KHÔNG
+    đi qua `route` nữa mà ra Internet thật - test lặng lẽ chạm Microsoft thật."""
+    return route.fulfill(status=200, content_type="text/html",
+                         body=f"<!doctype html><script>location.href={url!r}</script>")
+
+
 def inbox_context(browser, name: str = "outlook_inbox.html"):
     """Context trả một trang hộp thư cho mọi URL outlook.live.com."""
     html = (PAGES / name).read_text(encoding="utf-8")
@@ -41,7 +48,13 @@ def signed_out_context(browser, edit=None):
 
     # Phiên như cookie của Microsoft: vào được một lần là lần sau mở thẳng hộp
     # thư, không bị đá về trang giới thiệu nữa.
-    session = {"vao_duoc": False, "da_dang_xuat": 0}
+    #
+    # Như thật: đăng nhập thẳng ở login.live.com/login.srf chỉ đăng nhập TÀI
+    # KHOẢN Microsoft rồi đưa về account.microsoft.com - phiên OUTLOOK chỉ có
+    # khi đi qua cổng của chính Outlook (outlook.live.com/owa/?nlp=1).
+    session = {"vao_duoc": False, "da_dang_xuat": 0, "qua_outlook": False}
+    account = ("<!doctype html><title>Microsoft account | Home</title>"
+               "<body><h1>Account</h1><a href='#'>Change password</a>")
 
     def portal(route, request):
         if "logout" in request.url:
@@ -53,8 +66,21 @@ def signed_out_context(browser, edit=None):
                              body=form)
 
     def mailbox(route, request):
+        # Nhập mật khẩu xong, form đưa về .../mail/0/?signedin=1: tài khoản đã
+        # xác thực, NHƯNG phiên Outlook chưa có - Microsoft đưa về trang tài
+        # khoản (đúng lỗi thật người dùng gặp).
         if "signedin=1" in request.url:
-            session["vao_duoc"] = True
+            session["qua_outlook"] = True   # tài khoản đã đăng nhập
+            if not session["vao_duoc"]:
+                return _js_redirect(route, "https://account.microsoft.com/?refd=account.live.com")
+        # owa?nlp=1: chỉ lập được phiên Outlook KHI tài khoản đã xác thực. Chưa
+        # thì owa đá ngược về trang giới thiệu - đúng vòng lặp đã làm kẹt.
+        if "nlp=1" in request.url:
+            if session["qua_outlook"]:
+                session["vao_duoc"] = True
+            else:
+                return route.fulfill(status=302, headers={
+                    "location": "https://www.microsoft.com/en-us/microsoft-365/outlook/x"})
         if session["vao_duoc"]:
             return route.fulfill(status=200, content_type="text/html; charset=utf-8",
                                  body=inbox)
@@ -68,5 +94,6 @@ def signed_out_context(browser, edit=None):
     ctx.route("**://www.microsoft.com/en-us/privacy/**", _html(privacy))
     ctx.route("**://www.microsoft.com/**", _html(marketing))
     ctx.route("**://login.live.com/**", portal)
+    ctx.route("**://account.microsoft.com/**", _html(account))
     ctx.session = session
     return ctx

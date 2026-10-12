@@ -1,0 +1,133 @@
+{
+  "info": {
+    "name": "reader - OTP Outlook",
+    "description": "Lấy mã OTP từ Outlook qua reader. Đặt biến {{base_url}} và {{token}} ở phần Variables của collection trước khi chạy.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://deludedly-colorific-angila.ngrok-free.dev",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "DÁN_READER_TOKEN_VÀO_ĐÂY",
+      "type": "string"
+    },
+    {
+      "key": "account",
+      "value": "ten@outlook.com|MatKhau123",
+      "type": "string"
+    },
+    {
+      "key": "job_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Một lần gọi, nhận thẳng mã (POST /api/code)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Reader-Token", "value": "{{token}}" },
+          { "key": "ngrok-skip-browser-warning", "value": "1" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{account}}\",\n  \"wait\": 180\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/code",
+          "host": ["{{base_url}}"],
+          "path": ["api", "code"]
+        },
+        "description": "Chạy cả lượt rồi mới trả lời. Mã nằm ở trường `code`. Đặt Request timeout = 0 (Settings) kẻo Postman tự ngắt trước khi có mã."
+      }
+    },
+    {
+      "name": "Tạo lượt (POST /api/otp)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var d = pm.response.json();",
+              "if (d.id) { pm.collectionVariables.set('job_id', d.id); }",
+              "pm.test('có id', function () { pm.expect(d.id).to.be.a('string'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Reader-Token", "value": "{{token}}" },
+          { "key": "ngrok-skip-browser-warning", "value": "1" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{account}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/otp",
+          "host": ["{{base_url}}"],
+          "path": ["api", "otp"]
+        },
+        "description": "Trả về `id` ngay, lượt chạy ở nền. Test script tự lưu id vào biến {{job_id}}."
+      }
+    },
+    {
+      "name": "Hỏi trạng thái (GET /api/otp/{id})",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-Reader-Token", "value": "{{token}}" },
+          { "key": "ngrok-skip-browser-warning", "value": "1" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/otp/{{job_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "otp", "{{job_id}}"]
+        },
+        "description": "Gọi lại tới khi `done` = true. Có mã thì ở `code`."
+      }
+    },
+    {
+      "name": "Dừng lượt (POST /api/otp/{id}/stop)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Reader-Token", "value": "{{token}}" },
+          { "key": "ngrok-skip-browser-warning", "value": "1" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/otp/{{job_id}}/stop",
+          "host": ["{{base_url}}"],
+          "path": ["api", "otp", "{{job_id}}", "stop"]
+        }
+      }
+    },
+    {
+      "name": "Các lượt gần đây (GET /api/jobs)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-Reader-Token", "value": "{{token}}" },
+          { "key": "ngrok-skip-browser-warning", "value": "1" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/jobs",
+          "host": ["{{base_url}}"],
+          "path": ["api", "jobs"]
+        },
+        "description": "Danh sách lượt, không chứa mật khẩu."
+      }
+    }
+  ]
+}

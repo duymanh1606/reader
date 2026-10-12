@@ -76,6 +76,15 @@ class Hit:
 
 
 # -- đọc trạng thái trang --------------------------------------------------
+def short_url(page) -> str:
+    """URL để ghi log: host + path, BỎ query và fragment - trong luồng đăng
+    nhập chúng có thể mang mã OAuth."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(page.url or "")
+    return f"{parts.netloc}{parts.path}"[:120] or "(trống)"
+
+
 def is_login_page(page) -> bool:
     url = page.url or ""
     if "login.live.com" in url or "login.microsoftonline" in url:

@@ -160,6 +160,12 @@ class MailLoginBlocked(RuntimeError):
     """Gặp thứ agent không được tự làm (2FA, CAPTCHA, sai mật khẩu...)."""
 
 
+def outlook_short_url(page) -> str:
+    from reader.outlook import short_url
+
+    return short_url(page)
+
+
 def _trusted(page) -> bool:
     url = (page.url or "").lower()
     return any(host in url for host in TRUSTED_HOSTS)
@@ -475,7 +481,7 @@ def login(
         # Kiểm "đã vào được" TRƯỚC khi soi từ khoá: hộp thư mở ra thường có
         # sẵn mail chứa chữ "security code", soi trước thì nhầm thành 2FA.
         if logged_in(page):
-            logger.info("hộp thư %s: đã vào được", email)
+            logger.info("hộp thư %s: đã vào được (%s)", email, outlook_short_url(page))
             return
 
         if session.answer_stay_signed_in():

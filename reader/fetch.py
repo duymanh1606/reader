@@ -182,6 +182,11 @@ def _watch(page, email, password, settings: Settings, report, stop,
                        "không có mật khẩu - hãy đăng nhập Outlook trong cửa sổ vừa mở")
                 _sleep(3, stop)
                 continue
+            # URL lúc bị đưa ra khỏi hộp thư: cookie còn hạn mà vẫn bị đưa ra
+            # là có một màn hình Microsoft chen vào - URL nói nó là màn hình gì.
+            logger.info("hộp thư %s: cần đăng nhập, trang đang ở %s",
+                        email, outlook.short_url(page))
+            snapshot(page, snap)
             report("đang đăng nhập Outlook")
             try:
                 login(page, email, password,

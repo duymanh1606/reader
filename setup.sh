@@ -15,6 +15,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")" || exit 2
 DIR="$(pwd)"
 ENV=.env
 UNIT=/etc/systemd/system/reader.service
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 MODE="install"; ASSUME_YES=0; SERVICE=0
 for arg in "$@"; do
@@ -56,7 +57,18 @@ fi
 # ------------------------------------------------------------- 1. phụ thuộc
 head1 "Phụ thuộc"
 
-command -v uv >/dev/null || die "chưa có uv: curl -LsSf https://astral.sh/uv/install.sh | sh"
+if ! command -v uv >/dev/null 2>&1; then
+    note "chưa có uv - đang tự động cài (https://astral.sh/uv)..."
+    if ! command -v curl >/dev/null 2>&1; then
+        if command -v apt-get >/dev/null 2>&1; then
+            as_root apt-get update -qq && as_root apt-get install -y -qq curl ca-certificates
+        fi
+    fi
+    curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1 \
+        || die "cài uv không được - cài tay: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+fi
+command -v uv >/dev/null || die "chưa tìm thấy uv sau khi cài: hãy thử kiểm tra $HOME/.local/bin"
 ok "uv: $(uv --version 2>/dev/null)"
 
 if [ "$MODE" != "check" ]; then
@@ -165,7 +177,16 @@ elif [ -f chay.sh ]; then
 else
     TOKEN="${READER_TOKEN:-}"
     PROXY="${READER_PROXY:-}"
-    if [ "$ASSUME_YES" = 0 ]; then
+    gen_token() {
+        if command -v openssl >/dev/null 2>&1; then
+            openssl rand -hex 16
+        elif [ -r /dev/urandom ]; then
+            head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'
+        else
+            uv run python -c "import secrets; print(secrets.token_hex(16))" 2>/dev/null
+        fi
+    }
+    if [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then
         echo "  Token mở giao diện web. Bỏ trống = tự sinh ngẫu nhiên."
         echo "  Chỉ dùng chữ, số, '-' và '_' - nó đi trong query string."
         [ -z "$TOKEN" ] && read -rp "  READER_TOKEN: " TOKEN
@@ -174,7 +195,7 @@ else
         echo "  Dùng cổng HTTP, không SOCKS5. Bỏ trống = không qua proxy."
         [ -z "$PROXY" ] && read -rp "  READER_PROXY: " PROXY
     fi
-    [ -z "$TOKEN" ] && { TOKEN="$(openssl rand -hex 16)"; note "READER_TOKEN tự sinh"; }
+    [ -z "$TOKEN" ] && { TOKEN="$(gen_token)"; note "READER_TOKEN tự sinh"; }
 
     case "$TOKEN" in
         *[^A-Za-z0-9_-]*) die "READER_TOKEN có ký tự ngoài [A-Za-z0-9_-]; nó đi trong URL nên sẽ bị hiểu sai" ;;
@@ -322,9 +343,32 @@ head1 "Kết quả"
 [ "$warn" -eq 0 ] && echo "  Không có vấn đề nào." || echo "  $warn vấn đề ở trên."
 
 ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+port=$(envval READER_PORT); port=${port:-5678}
+token=$(envval READER_TOKEN)
+
+chmod +x "$DIR/setup.sh" "$DIR/run.sh" 2>/dev/null || true
+
 cat <<NEXT
 
-Mở: http://${ip:-<ip>}:$(envval READER_PORT | grep . || echo 5678)/?token=$(envval READER_TOKEN)
+============================================================
+  SETUP MÔI TRƯỜNG HOÀN TẤT!
+============================================================
+  Để khởi chạy reader ngay, chỉ cần gõ:
+    ./run.sh
+
+  Hoặc chạy nền (background):
+    ./run.sh --daemon    (dừng: ./run.sh --stop)
+
+  Địa chỉ khi chạy:
+    http://localhost:${port}/?token=${token}
+NEXT
+if [ -n "$ip" ]; then
+cat <<NEXT
+    http://${ip}:${port}/?token=${token}
+NEXT
+fi
+cat <<NEXT
+============================================================
 
 NEXT
 if [ -f "$UNIT" ]; then
@@ -335,8 +379,8 @@ if [ -f "$UNIT" ]; then
 NEXT
 else
     cat <<'NEXT'
-  ./setup.sh --service              # chạy nền bằng systemd, tự lên lại sau reboot
-  uv run python -m reader           # hoặc chạy thẳng ở terminal này
+  ./run.sh                          # lệnh chạy tiêu chuẩn
+  ./setup.sh --service              # chạy nền bằng systemd (tự bật lại sau reboot)
 NEXT
 fi
 [ "$warn" -eq 0 ]

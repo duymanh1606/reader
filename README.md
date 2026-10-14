@@ -8,13 +8,25 @@ Không có API hộp thư: agent đọc chữ trên trang Outlook như người 
 điểm từng dãy số theo ngữ cảnh quanh nó (`reader/otp_extract.py`) nên nó không
 trả về số đơn hàng hay số điện thoại.
 
-## Chạy trên máy của bạn
+## Khởi chạy nhanh trên máy mới (Chỉ 2 lệnh)
+
+Trên máy mới (Linux / WSL / Server), bạn chỉ cần chạy đúng 2 lệnh:
 
 ```bash
-uv sync
-uv run playwright install chromium      # chỉ lần đầu
-uv run python -m reader                 # rồi mở http://127.0.0.1:5678
+# Lệnh 1: Cài đặt toàn bộ môi trường (chỉ chạy 1 lần đầu)
+./setup.sh
+
+# Lệnh 2: Khởi chạy reader
+./run.sh
 ```
+
+- **`./setup.sh`**: Tự động cài `uv` (nếu máy chưa có), cài đặt thư viện Python, cài Chromium kèm thư viện hệ thống, tự sinh file cấu hình `.env` bảo mật (mode 600) và kiểm tra trình duyệt.
+- **`./run.sh`**: Khởi chạy ứng dụng và in URL kèm token để truy cập.
+  - Chạy trực tiếp (nhấn Ctrl+C để dừng): `./run.sh`
+  - Chạy nền (daemon/background): `./run.sh --daemon`
+  - Dừng tiến trình chạy nền: `./run.sh --stop`
+  - Kiểm tra trạng thái: `./run.sh --status`
+  - Xem log thời gian thực: `./run.sh --log`
 
 Dán tài khoản dạng `email|matkhau` rồi bấm **Lấy mã** (cắt ở dấu `|` đầu tiên,
 nên mật khẩu có `|` vẫn nguyên). Chỉ dán email cũng được: agent mở
